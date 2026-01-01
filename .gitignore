@@ -30,3 +30,6 @@ ppocr/
 .idea/
 pretrain_models
 *.pt[h]
+*.pd*
+*.pte
+*.onnx

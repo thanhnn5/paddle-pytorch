@@ -36,7 +36,7 @@ def init_head(config):
         ]:  # distillation model
             for key in config["Architecture"]["Models"]:
                 if (
-                        config["Architecture"]["Models"][key]["Head"]["name"] == "MultiHead"
+                    config["Architecture"]["Models"][key]["Head"]["name"] == "MultiHead"
                 ):  # for multi head
                     if config["PostProcess"]["name"] == "DistillationSARLabelDecode":
                         char_num = char_num - 2
@@ -46,16 +46,16 @@ def init_head(config):
                     out_channels_list["CTCLabelDecode"] = char_num
                     # update SARLoss params
                     if (
-                            list(config["Loss"]["loss_config_list"][-1].keys())[0]
-                            == "DistillationSARLoss"
+                        list(config["Loss"]["loss_config_list"][-1].keys())[0]
+                        == "DistillationSARLoss"
                     ):
                         config["Loss"]["loss_config_list"][-1]["DistillationSARLoss"][
                             "ignore_index"
                         ] = (char_num + 1)
                         out_channels_list["SARLabelDecode"] = char_num + 2
                     elif (
-                            list(config["Loss"]["loss_config_list"][-1].keys())[0]
-                            == "DistillationNRTRLoss"
+                        list(config["Loss"]["loss_config_list"][-1].keys())[0]
+                        == "DistillationNRTRLoss"
                     ):
                         out_channels_list["NRTRLabelDecode"] = char_num + 3
 
@@ -81,7 +81,7 @@ def init_head(config):
                     }
                 else:
                     config["Loss"]["loss_config_list"][1]["SARLoss"]["ignore_index"] = (
-                            char_num + 1
+                        char_num + 1
                     )
                 out_channels_list["SARLabelDecode"] = char_num + 2
             elif list(config["Loss"]["loss_config_list"][1].keys())[0] == "NRTRLoss":
@@ -97,11 +97,15 @@ def init_head(config):
 
 def conver_params(model_config, paddle_params_path, tmp_dir, show_log=False):
     from padiff import assign_weight, create_model
+
     torch_model = build_model(model_config)
     paddle_model = build_model_paddle(model_config)
     if os.path.exists(paddle_params_path):
         paddle_model.set_state_dict(paddle.load(paddle_params_path))
-        print(f'load paddle ckpt from {paddle_params_path}')
+        print(f"Loaded Paddle ckpt from {paddle_params_path}")
+    else:
+        raise FileNotFoundError(f"Could not load Paddle ckpt from {paddle_params_path}")
+
     torch_model.eval()
     paddle_model.eval()
 
@@ -110,32 +114,42 @@ def conver_params(model_config, paddle_params_path, tmp_dir, show_log=False):
     torch_model_warp.auto_layer_map("base", show_log=show_log)
     paddle_model_warp.auto_layer_map("raw", show_log=show_log)
     assign_weight(torch_model_warp, paddle_model_warp)
-    
-    # for recv4 rec and det
-    # torch2paddle(torch_model, paddle_model)
 
     if not os.path.exists(paddle_params_path):
-        paddle_params_path = os.path.join(tmp_dir, 'paddle.pdparams')
+        paddle_params_path = os.path.join(tmp_dir, "paddle.pdparams")
         paddle.save(paddle_model.state_dict(), paddle_params_path)
-        print(f"save default paddle params success to {paddle_params_path}")
+        print(f"Saved default paddle params to {paddle_params_path}")
+
     torch_params_path = paddle_params_path.replace(".pdparams", ".pth")
     torch.save({"state_dict": torch_model.state_dict()}, torch_params_path)
-    print(f"save convert torch params to {torch_params_path}")
+    print(f"Saved converted Torch params to {torch_params_path}")
     return paddle_params_path, torch_params_path
+
 
 def torch2paddle(torch_model: torch.nn.Module, paddle_model: paddle.nn.Layer):
     paddle_state_dict = paddle_model.state_dict()
     torch_dict = torch_model.state_dict()
     # paddle_state_dict = paddle.load(paddle_model)
-    fc_names = ["qkv",'fc', 'kv', 'tgt_word_prj','q','out_proj','linear','proj'] # v4 rec
+    fc_names = [
+        "qkv",
+        "fc",
+        "kv",
+        "tgt_word_prj",
+        "q",
+        "out_proj",
+        "linear",
+        "proj",
+    ]  # v4 rec
     # fc_names = []
     torch_state_dict = {}
     for k in paddle_state_dict:
         v = paddle_state_dict[k].detach().cpu().numpy()
         flag = [i in k for i in fc_names]
-        if any(flag) and "weight" in k: # ignore bias
+        if any(flag) and "weight" in k:  # ignore bias
             new_shape = [1, 0] + list(range(2, v.ndim))
-            print(f"name: {k}, ori shape: {v.shape}, new shape: {v.transpose(new_shape).shape}")
+            print(
+                f"name: {k}, ori shape: {v.shape}, new shape: {v.transpose(new_shape).shape}"
+            )
             v = v.transpose(new_shape)
         k = k.replace("_variance", "running_var")
         k = k.replace("_mean", "running_mean")
@@ -145,14 +159,15 @@ def torch2paddle(torch_model: torch.nn.Module, paddle_model: paddle.nn.Layer):
 
     for k in torch_state_dict:
         if k not in torch_model.state_dict():
-            print(f'{k} is not in torch model')
+            print(f"{k} is not in torch model")
     for k in torch_model.state_dict():
-        if 'num_batches_tracked' in k:
+        if "num_batches_tracked" in k:
             continue
         if k not in torch_state_dict:
-            print(f'{k} is not in torch params')
+            print(f"{k} is not in torch params")
     torch_model.load_state_dict(torch_state_dict)
-    
+
+
 def get_input(w, h, color=True):
     img = cv2.imread("doc/imgs/1.jpg", 1 if color else 0)
     img = cv2.resize(img, (w, h))
@@ -161,8 +176,8 @@ def get_input(w, h, color=True):
     img = np.expand_dims(img, 0).transpose([0, 3, 1, 2])
     img = img.astype("float32")
     img /= 255
-    img-=0.5
-    img/=0.5
+    img -= 0.5
+    img /= 0.5
     return img
 
 
@@ -187,15 +202,17 @@ def paddle_infer(config, input_np, device, params_path):
     model.set_state_dict(paddle.load(params_path))
     model.eval()
 
-    y = model(x)
+    with paddle.no_grad():
+        y = model(x)
+
     return y
 
 
 def torch_infer(config, input_np, device, params_path):
     print(f"torch version: {torch.__version__}")
     print(f"input shape of torch is {input_np.shape}")
-    if device == 'gpu':
-        device = 'cuda'
+    if device == "gpu":
+        device = "cuda"
     x = torch.from_numpy(input_np)
     x = x.to(device)
     model = build_model(config)
@@ -203,26 +220,30 @@ def torch_infer(config, input_np, device, params_path):
     model.eval()
     model = model.to(device)
 
-    y = model(x)
+    with torch.no_grad():
+        y = model(x)
+
     return y
 
 
 def main():
     device = "cpu"
-    input_np = get_input(320, 48, True)
 
-    tmp_dir = './tmp'
+    tmp_dir = "./tmp"
     os.makedirs(tmp_dir, exist_ok=True)
-    config_path = "configs/rec/rec_r34_vd_tps_bilstm_ctc.yml"
-    paddle_params_path = r''
-    torch_params_path = paddle_params_path.replace('.pdparams', '.pth')
+    config_path = "configs/rec/PP-OCRv5/PP-OCRv5_mobile_rec.yml"
+    paddle_params_path = "weights/mob_rec_2.pdparams"
     config = load_config(config_path)
     config = init_head(config)
     model_config = config["Architecture"]
     print(model_config)
 
     # step 1 convert params and  run paddle and save result
-    paddle_params_path, torch_params_path = conver_params(model_config, paddle_params_path, tmp_dir, show_log=False)
+    paddle_params_path, torch_params_path = conver_params(
+        model_config, paddle_params_path, tmp_dir, show_log=False
+    )
+
+    input_np = get_input(w=320, h=48, color=True)
     # step 2 run paddle
     paddle_out = paddle_infer(model_config, input_np, device, paddle_params_path)
     # step 2 run torch
