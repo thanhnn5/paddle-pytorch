@@ -63,7 +63,7 @@ def _load_hybrid_encoder():
         try:
             spec.loader.exec_module(mod)
         except Exception as e:
-            print(f"[HybridEncoderNeck] optional dep warning (engine.core): {e}")
+            print(f"[HybridEncoderNeck] WARNING: required module load failed: {e} — HybridEncoder may not initialize correctly")
 
     # Expose register on the engine stub so `from ..core import register` works
     engine_stub = sys.modules["engine"]
@@ -83,7 +83,7 @@ def _load_hybrid_encoder():
         try:
             spec.loader.exec_module(mod)
         except Exception as e:
-            print(f"[HybridEncoderNeck] optional dep warning (engine.deim.utils): {e}")
+            print(f"[HybridEncoderNeck] WARNING: required module load failed: {e} — HybridEncoder may not initialize correctly")
 
     # Expose utils on the engine.deim stub
     deim_stub = sys.modules["engine.deim"]
@@ -102,7 +102,13 @@ def _load_hybrid_encoder():
     return mod
 
 
-_hybrid_encoder_mod = _load_hybrid_encoder()
+try:
+    _hybrid_encoder_mod = _load_hybrid_encoder()
+except Exception as e:
+    raise ImportError(
+        f"HybridEncoderNeck failed to load DEIMv2's HybridEncoder: {e}\n"
+        f"Set DEIMV2_PATH env var to the DEIMv2 repo root."
+    ) from e
 HybridEncoder = _hybrid_encoder_mod.HybridEncoder
 
 
@@ -128,8 +134,8 @@ class HybridEncoderNeck(nn.Module):
         dim_feedforward: int = 1024,
         dropout: float = 0.0,
         num_encoder_layers: int = 1,
-        use_encoder_idx: list = None,   # default: [2]
-        feat_strides: list = None,      # default: [8, 16, 32]
+        use_encoder_idx=None,            # default: [2]
+        feat_strides=None,              # default: [8, 16, 32]
         expansion: float = 1.0,
         depth_mult: float = 1.0,
         version: str = "deim",
@@ -177,6 +183,7 @@ class HybridEncoderNeck(nn.Module):
             Tensor [B, out_channels, H/4, W/4]
         """
         encoder_out = self.encoder(list(feats))  # [p2@1/8, p3@1/16, p4@1/32]
+        assert len(encoder_out) == 3, f"HybridEncoder returned {len(encoder_out)} feature maps, expected 3"
         p2, p3, p4 = encoder_out
 
         p3_up = F.interpolate(p3, size=p2.shape[2:], mode="nearest")
