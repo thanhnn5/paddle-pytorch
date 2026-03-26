@@ -58,8 +58,8 @@ def _load_dinov3_adapter():
             sys.modules[mod_name] = mod
             try:
                 spec.loader.exec_module(mod)
-            except Exception:
-                pass  # tolerate optional sub-deps in these helpers
+            except Exception as e:
+                print(f"[DINOv3DetBackbone] optional dep warning: {e}")
 
     # Load engine.core so @register() decorator works
     core_dir = os.path.join(_deimv2_path, "engine", "core")
@@ -76,8 +76,8 @@ def _load_dinov3_adapter():
             sys.modules[mod_name] = mod
             try:
                 spec.loader.exec_module(mod)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DINOv3DetBackbone] optional dep warning: {e}")
 
     # Load the dinov3 sub-package __init__
     dinov3_dir = os.path.join(backbone_dir, "dinov3")
@@ -92,8 +92,8 @@ def _load_dinov3_adapter():
         sys.modules["engine.backbone.dinov3"] = mod
         try:
             spec.loader.exec_module(mod)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DINOv3DetBackbone] optional dep warning: {e}")
 
     # Finally load the adapter itself
     adapter_path = os.path.join(backbone_dir, "dinov3_adapter.py")
@@ -127,12 +127,12 @@ def _syncbn_to_bn(module: nn.Module) -> None:
                 track_running_stats=child.track_running_stats,
             )
             if child.affine:
-                bn.weight = child.weight
-                bn.bias = child.bias
+                bn.weight = nn.Parameter(child.weight.data.clone())
+                bn.bias = nn.Parameter(child.bias.data.clone())
             if child.track_running_stats:
-                bn.running_mean = child.running_mean
-                bn.running_var = child.running_var
-                bn.num_batches_tracked = child.num_batches_tracked
+                bn.running_mean.copy_(child.running_mean)
+                bn.running_var.copy_(child.running_var)
+                bn.num_batches_tracked.copy_(child.num_batches_tracked)
             setattr(module, name, bn)
         else:
             _syncbn_to_bn(child)
@@ -156,7 +156,7 @@ class DINOv3DetBackbone(nn.Module):
         in_channels: int = 3,               # injected by BaseModel; unused internally
         name_variant: str = "dinov3_vits16",  # passed as 'name' to DINOv3STAs
         weights_path=None,
-        interaction_indexes: list = [5, 8, 11],
+        interaction_indexes=None,
         hidden_dim: int = 256,
         conv_inplane: int = 32,
         use_sta: bool = True,
@@ -164,6 +164,9 @@ class DINOv3DetBackbone(nn.Module):
         sync_bn: bool = False,              # True only under torch DDP
     ):
         super().__init__()
+
+        if interaction_indexes is None:
+            interaction_indexes = [5, 8, 11]
 
         self._backbone = DINOv3STAs(
             name=name_variant,
@@ -183,4 +186,6 @@ class DINOv3DetBackbone(nn.Module):
 
     def forward(self, x):
         """Return (c2, c3, c4) feature maps at strides 8, 16, 32."""
-        return self._backbone(x)
+        out = self._backbone(x)
+        assert len(out) == 3, f"Expected 3 feature maps from backbone, got {len(out)}"
+        return out
