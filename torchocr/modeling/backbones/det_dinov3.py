@@ -203,7 +203,7 @@ class DINOv3DetBackbone(nn.Module):
         # DINOv3 leave their bias_mask buffer as NaN (a sentinel for checkpoint
         # loading).  This causes NaN propagation during forward passes.  Replace
         # any remaining NaN masks with 1.0 so the layer acts as plain nn.Linear.
-        if weights_path is None:
+        if weights_path is None or not os.path.exists(weights_path):
             _fix_nan_bias_mask(self._backbone)
 
         # PytorchOCR BaseModel reads this to set Neck's in_channels
