@@ -5,115 +5,16 @@ Architecture:
     Image -> DINOv3DetBackbone -> HybridEncoderNeck -> PFHeadLocal (DBHead)
 """
 
-import importlib.util
 import os
-import sys
-import types
 
 import torch
 import torch.nn as nn
 
-# ---------------------------------------------------------------------------
-# Make DEIMv2 importable without a setup.py.
-# We load dinov3_adapter directly from its file to avoid importing the full
-# engine package (which requires optional deps like calflops).
-# ---------------------------------------------------------------------------
-_deimv2_path = os.environ.get(
-    "DEIMV2_PATH",
-    os.path.join(os.path.dirname(__file__), "../../../../DEIMv2"),
-)
-_deimv2_path = os.path.abspath(_deimv2_path)
-if _deimv2_path not in sys.path:
-    sys.path.insert(0, _deimv2_path)
-
-
-def _load_dinov3_adapter():
-    """
-    Load engine.backbone.dinov3_adapter without triggering engine/__init__.py,
-    which pulls in heavy/optional dependencies (calflops, etc.).
-    """
-    backbone_dir = os.path.join(_deimv2_path, "engine", "backbone")
-
-    # Register stub packages so relative imports inside the module resolve.
-    for pkg in ("engine", "engine.backbone"):
-        if pkg not in sys.modules:
-            stub = types.ModuleType(pkg)
-            stub.__path__ = [
-                os.path.join(_deimv2_path, *pkg.split("."))
-            ]
-            stub.__package__ = pkg
-            sys.modules[pkg] = stub
-
-    # Load engine.backbone.common first (provides get_activation etc.)
-    for mod_name, filename in [
-        ("engine.backbone.common", "common.py"),
-        ("engine.backbone.utils", "utils.py"),
-        ("engine.backbone.vit_tiny", "vit_tiny.py"),
-    ]:
-        if mod_name not in sys.modules:
-            spec = importlib.util.spec_from_file_location(
-                mod_name, os.path.join(backbone_dir, filename)
-            )
-            mod = importlib.util.module_from_spec(spec)
-            mod.__package__ = "engine.backbone"
-            sys.modules[mod_name] = mod
-            try:
-                spec.loader.exec_module(mod)
-            except Exception as e:
-                print(f"[DINOv3DetBackbone] optional dep warning: {e}")
-
-    # Load engine.core so @register() decorator works
-    core_dir = os.path.join(_deimv2_path, "engine", "core")
-    for mod_name, filename in [
-        ("engine.core", "__init__.py"),
-    ]:
-        if mod_name not in sys.modules:
-            spec = importlib.util.spec_from_file_location(
-                mod_name, os.path.join(core_dir, filename)
-            )
-            mod = importlib.util.module_from_spec(spec)
-            mod.__package__ = "engine.core"
-            mod.__path__ = [core_dir]
-            sys.modules[mod_name] = mod
-            try:
-                spec.loader.exec_module(mod)
-            except Exception as e:
-                print(f"[DINOv3DetBackbone] optional dep warning: {e}")
-
-    # Load the dinov3 sub-package __init__
-    dinov3_dir = os.path.join(backbone_dir, "dinov3")
-    if "engine.backbone.dinov3" not in sys.modules:
-        spec = importlib.util.spec_from_file_location(
-            "engine.backbone.dinov3",
-            os.path.join(dinov3_dir, "__init__.py"),
-        )
-        mod = importlib.util.module_from_spec(spec)
-        mod.__package__ = "engine.backbone.dinov3"
-        mod.__path__ = [dinov3_dir]
-        sys.modules["engine.backbone.dinov3"] = mod
-        try:
-            spec.loader.exec_module(mod)
-        except Exception as e:
-            print(f"[DINOv3DetBackbone] optional dep warning: {e}")
-
-    # Finally load the adapter itself
-    adapter_path = os.path.join(backbone_dir, "dinov3_adapter.py")
-    spec = importlib.util.spec_from_file_location(
-        "engine.backbone.dinov3_adapter", adapter_path
-    )
-    mod = importlib.util.module_from_spec(spec)
-    mod.__package__ = "engine.backbone"
-    sys.modules["engine.backbone.dinov3_adapter"] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_adapter_mod = _load_dinov3_adapter()
-DINOv3STAs = _adapter_mod.DINOv3STAs
+from torchocr.modeling.thirdparty.deimv2.backbone.dinov3_adapter import DINOv3STAs
 
 
 # ---------------------------------------------------------------------------
-# Helper: convert SyncBatchNorm -> BatchNorm2d (needed for single-GPU runs)
+# Helper: fix NaN bias_mask in LinearKMaskedBias layers
 # ---------------------------------------------------------------------------
 
 def _fix_nan_bias_mask(module: nn.Module) -> None:
@@ -132,6 +33,10 @@ def _fix_nan_bias_mask(module: nn.Module) -> None:
     for child in module.children():
         _fix_nan_bias_mask(child)
 
+
+# ---------------------------------------------------------------------------
+# Helper: convert SyncBatchNorm -> BatchNorm2d (needed for single-GPU runs)
+# ---------------------------------------------------------------------------
 
 def _syncbn_to_bn(module: nn.Module) -> None:
     """Recursively replace all nn.SyncBatchNorm children with nn.BatchNorm2d."""
