@@ -8,9 +8,10 @@ def build_backbone(config, model_type):
         from .rec_lcnetv3 import PPLCNetV3
         from .rec_hgnet import PPHGNet_small
         from .rec_pphgnetv2 import PPHGNetV2_B4
+        from .det_dinov3 import DINOv3DetBackbone
         support_dict = [
             'MobileNetV3', 'ResNet_vd', 'PPLCNetV3', 'PPHGNet_small',
-            'PPHGNetV2_B4',
+            'PPHGNetV2_B4', 'DINOv3DetBackbone',
         ]
     elif model_type == "rec" or model_type == "cls":
         from .rec_mobilenet_v3 import MobileNetV3
