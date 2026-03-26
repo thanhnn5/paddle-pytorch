@@ -10,6 +10,7 @@ import os
 import sys
 import types
 
+import torch
 import torch.nn as nn
 
 # ---------------------------------------------------------------------------
@@ -115,6 +116,23 @@ DINOv3STAs = _adapter_mod.DINOv3STAs
 # Helper: convert SyncBatchNorm -> BatchNorm2d (needed for single-GPU runs)
 # ---------------------------------------------------------------------------
 
+def _fix_nan_bias_mask(module: nn.Module) -> None:
+    """
+    Replace NaN-initialised bias_mask buffers in LinearKMaskedBias layers with 1.0.
+
+    DINOv3's LinearKMaskedBias registers bias_mask=NaN as a sentinel that is
+    overwritten when loading pretrained weights.  When training from scratch the
+    mask stays NaN and propagates through the attention computation.  Setting it
+    to 1.0 makes the layer behave identically to a plain nn.Linear (K-bias is
+    used as-is, no masking), which is the safe default for random initialisation.
+    """
+    for buf_name, buf in list(module.named_buffers(recurse=False)):
+        if buf_name == "bias_mask" and buf is not None and torch.isnan(buf).all():
+            buf.fill_(1.0)
+    for child in module.children():
+        _fix_nan_bias_mask(child)
+
+
 def _syncbn_to_bn(module: nn.Module) -> None:
     """Recursively replace all nn.SyncBatchNorm children with nn.BatchNorm2d."""
     for name, child in list(module.named_children()):
@@ -180,6 +198,13 @@ class DINOv3DetBackbone(nn.Module):
 
         if not sync_bn:
             _syncbn_to_bn(self._backbone)
+
+        # When no pretrained weights are loaded the LinearKMaskedBias layers in
+        # DINOv3 leave their bias_mask buffer as NaN (a sentinel for checkpoint
+        # loading).  This causes NaN propagation during forward passes.  Replace
+        # any remaining NaN masks with 1.0 so the layer acts as plain nn.Linear.
+        if weights_path is None:
+            _fix_nan_bias_mask(self._backbone)
 
         # PytorchOCR BaseModel reads this to set Neck's in_channels
         self.out_channels = [hidden_dim, hidden_dim, hidden_dim]
