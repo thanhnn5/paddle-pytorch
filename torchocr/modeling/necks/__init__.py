@@ -4,8 +4,9 @@ __all__ = ['build_neck']
 def build_neck(config):
     from .db_fpn import DBFPN, RSEFPN, LKPAN
     from .rnn import SequenceEncoder
+    from .hybrid_encoder_neck import HybridEncoderNeck
     support_dict = [
-        'SequenceEncoder', 'DBFPN', 'RSEFPN', 'LKPAN'
+        'SequenceEncoder', 'DBFPN', 'RSEFPN', 'LKPAN', 'HybridEncoderNeck'
     ]
 
     module_name = config.pop('name')
