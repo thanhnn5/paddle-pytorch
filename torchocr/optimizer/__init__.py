@@ -1,4 +1,5 @@
 import copy
+import warnings
 
 import torch
 
@@ -48,20 +49,44 @@ def build_optimizer(optim_config, lr_scheduler_config, epochs, step_each_epoch, 
     config = copy.deepcopy(optim_config)
     optim_name = config.pop('name')
 
+    # --- Extract group keys (Issue 1: use loop instead of manual pops) ---
+    group_vals = {}
+    for key in _GROUP_KEYS:
+        group_vals[key] = config.pop(key, None)
+
+    freeze_backbone = group_vals['freeze_backbone'] if group_vals['freeze_backbone'] is not None else False
+    backbone_lr_mult = group_vals['backbone_lr_mult']
+    neck_lr_mult     = group_vals['neck_lr_mult']
+    head_lr_mult     = group_vals['head_lr_mult']
+
     # --- backbone freeze (optional) ---
-    freeze_backbone = config.pop('freeze_backbone', False)
     if freeze_backbone:
         backbone = getattr(model, 'backbone', None)
         if backbone is not None:
             for p in backbone.parameters():
                 p.requires_grad = False
 
-    # --- per-group LR (optional) ---
-    backbone_lr_mult = config.pop('backbone_lr_mult', None)
-    neck_lr_mult     = config.pop('neck_lr_mult',     None)
-    head_lr_mult     = config.pop('head_lr_mult',     None)
-
     use_param_groups = any(v is not None for v in (backbone_lr_mult, neck_lr_mult, head_lr_mult))
+
+    # --- Issue 2: PolynomialLR incompatibility guard ---
+    if use_param_groups:
+        scheduler_name = lr_scheduler_config.get('name')
+        if scheduler_name == 'PolynomialLR':
+            raise ValueError(
+                "PolynomialLR is incompatible with per-group learning rates (backbone_lr_mult / "
+                "neck_lr_mult / head_lr_mult) because it anchors decay on optimizer.defaults['lr'] "
+                "rather than each group's individual lr. Use a different scheduler or remove the "
+                "*_lr_mult keys."
+            )
+
+    # --- Issue 3: freeze_backbone + backbone_lr_mult warning ---
+    if freeze_backbone and backbone_lr_mult is not None:
+        warnings.warn(
+            "freeze_backbone=True with backbone_lr_mult/neck_lr_mult/head_lr_mult: backbone params "
+            "are frozen so backbone_lr_mult has no effect.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if use_param_groups:
         base_lr = config['lr']  # kept in config for the optimizer default
