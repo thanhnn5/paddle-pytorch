@@ -1,7 +1,11 @@
 #!/bin/bash
 
 python3 tools/train.py -c configs/det/PP-OCRv5/PP-OCRv5_dinov3_det.yml \
-    -o Global.epoch_num=50 \
+    -o \
+    Global.use_wandb=true \
+    Global.wandb.project=AddressDINOv3 \
+    Global.wandb.name=PPOCRv5-DINOv3_ConvNext \
+    Global.epoch_num=50 \
     Global.print_batch_step=50 \
     Train.dataset.loader.batch_size_per_card=8 \
     Train.dataset.data_dir=data/ocr_det_mask_3-1/ \

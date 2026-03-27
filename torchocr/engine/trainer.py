@@ -49,6 +49,18 @@ class Trainer(object):
         if self.local_rank == 0 and self.cfg['Global']['use_tensorboard'] and 'train' in mode:
             self.writer = SummaryWriter(self.cfg['Global']['output_dir'])
 
+        self.wandb_run = None
+        if self.local_rank == 0 and self.cfg['Global'].get('use_wandb', False) and 'train' in mode:
+            import wandb
+            wandb_cfg = self.cfg['Global'].get('wandb', {})
+            self.wandb_run = wandb.init(
+                project=wandb_cfg.get('project', 'torchocr'),
+                name=wandb_cfg.get('name', None),
+                entity=wandb_cfg.get('entity', None),
+                config=self.cfg,
+                dir=self.cfg['Global']['output_dir'],
+            )
+
         self.logger = get_logger('torchocr', os.path.join(self.cfg['Global']['output_dir'],
                                                           'train.log') if 'train' in mode else None)
         
@@ -211,6 +223,9 @@ class Trainer(object):
                     for k, v in train_stats.get().items():
                         self.writer.add_scalar(f'TRAIN/{k}', v, global_step)
 
+                if self.wandb_run is not None:
+                    self.wandb_run.log({f'train/{k}': v for k, v in train_stats.get().items()}, step=global_step)
+
                 if self.local_rank == 0 and (
                         (global_step > 0 and global_step % print_batch_step == 0) or
                         (idx >= len(self.train_dataloader) - 1)):
@@ -241,12 +256,20 @@ class Trainer(object):
                         if isinstance(v, (float, int)):
                             self.writer.add_scalar(f'EVAL/{k}', cur_metric[k], global_step)
 
+                if self.wandb_run is not None:
+                    self.wandb_run.log(
+                        {f'eval/{k}': v for k, v in cur_metric.items() if isinstance(v, (float, int))},
+                        step=global_step,
+                    )
+
                 if cur_metric[self.eval_class.main_indicator] >= best_metric[self.eval_class.main_indicator]:
                     best_metric.update(cur_metric)
                     best_metric['best_epoch'] = epoch
                     if self.writer is not None:
                         self.writer.add_scalar(f'EVAL/best_{self.eval_class.main_indicator}',
                                                best_metric[self.eval_class.main_indicator], global_step)
+                    if self.wandb_run is not None:
+                        self.wandb_run.summary[f'best_{self.eval_class.main_indicator}'] = best_metric[self.eval_class.main_indicator]
                     save_ckpt(self.model, self.cfg, self.optimizer, self.lr_scheduler, epoch, global_step, best_metric,
                               is_best=True)
                 best_str = f"best metric, {', '.join(['{}: {}'.format(k, v) for k, v in best_metric.items()])}"
@@ -259,6 +282,8 @@ class Trainer(object):
         self.logger.info(best_str)
         if self.writer is not None:
             self.writer.close()
+        if self.wandb_run is not None:
+            self.wandb_run.finish()
         if torch.cuda.device_count() > 1:
             torch.distributed.destroy_process_group()
 
