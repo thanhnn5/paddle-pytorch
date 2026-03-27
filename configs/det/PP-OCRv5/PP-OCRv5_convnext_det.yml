@@ -53,6 +53,12 @@ Optimizer:
   betas: [0.9, 0.999]
   lr: 0.0001
   weight_decay: 0.0001
+  # Per-group LR: multipliers applied to `lr` above. Remove comments to enable.
+  # backbone_lr_mult: 0.1   # backbone gets lr * 0.1 = 1e-5
+  # neck_lr_mult: 1.0
+  # head_lr_mult: 1.0
+  # Freeze backbone entirely (no gradient, not added to optimizer):
+  # freeze_backbone: false
 
 LRScheduler:
   name: CosineAnnealingLR
