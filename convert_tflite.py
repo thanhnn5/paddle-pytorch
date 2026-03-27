@@ -113,36 +113,40 @@ def comma_separated_list_int(arg):
 
 
 class ExportConfig:
-    def __init__(self, det: bool, backend: str = "coreml"):
+    def __init__(self, det: bool, backend: str = "coreml", swap_channel: bool = False):
         if det:
             self.config_path: str = "configs/det/PP-OCRv5/PP-OCRv5_mobile_det.yml"
             self.weights_path: str = "weights/mob_det_2.pth"
             self.backend: str = backend
-            self.dims: list[int] = [1, 3, 1280, 704]
+            if not swap_channel:
+                self.dims: list[int] = [1, 3, 1280, 704]
+            else:
+                self.dims: list[int] = [1, 1280, 704, 3]
             self.dynamic: dict = None
         else:
             self.config_path: str = "configs/rec/PP-OCRv5/PP-OCRv5_mobile_rec.yml"
             self.weights_path: str = "weights/mob_rec_2.pth"
             self.backend: str = backend
-            self.dims: list[int] = [1, 3, 48, 320]
-            # self.dynamic: dict = {
-            #     "x": {
-            #         0: Dim("batchsize", max=4),
-            #     }
-            # }
+            if not swap_channel:
+                self.dims: list[int] = [1, 3, 48, 320]
+            else:
+                self.dims: list[int] = [1, 48, 320, 3]
+
             self.dynamic: dict = None
         self.output_path: str = (
             f"weights/{os.path.basename(self.weights_path).rsplit('.', 1)[0]}_{backend}.tflite"
         )
+        self.swap_channel: bool = swap_channel
 
 
 def parse_export_config() -> ExportConfig:
     parser = argparse.ArgumentParser()
     parser.add_argument("--det", action="store_true", default=False)
     parser.add_argument("--backend", type=str, default="coreml")
+    parser.add_argument("--swap_channel", action="store_true", default=False)
     args = parser.parse_args()
 
-    cfg = ExportConfig(args.det, args.backend)
+    cfg = ExportConfig(args.det, args.backend, args.swap_channel)
     return cfg
 
 
@@ -157,7 +161,11 @@ def main(cfg: ExportConfig):
     torch_model = load_torch_model(model_config, device, torch_pth)
 
     sample_inputs = (torch.randn(*cfg.dims, dtype=torch.float32),)
-    edge_model = ai_edge_torch.convert(torch_model.eval(), sample_inputs)
+    if cfg.swap_channel:
+        torch_channel_last_model = ai_edge_torch.to_channel_last_io(torch_model, args=[0])
+        edge_model = ai_edge_torch.convert(torch_channel_last_model.eval(), sample_inputs)
+    else:
+        edge_model = ai_edge_torch.convert(torch_model.eval(), sample_inputs)
     edge_model.export(cfg.output_path)
 
 
