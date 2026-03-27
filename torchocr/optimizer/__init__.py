@@ -82,8 +82,7 @@ def build_optimizer(optim_config, lr_scheduler_config, epochs, step_each_epoch, 
     # --- Issue 3: freeze_backbone + backbone_lr_mult warning ---
     if freeze_backbone and backbone_lr_mult is not None:
         warnings.warn(
-            "freeze_backbone=True with backbone_lr_mult/neck_lr_mult/head_lr_mult: backbone params "
-            "are frozen so backbone_lr_mult has no effect.",
+            "freeze_backbone=True and backbone_lr_mult is set: backbone params are frozen so backbone_lr_mult has no effect.",
             UserWarning,
             stacklevel=2,
         )
