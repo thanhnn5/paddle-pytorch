@@ -178,7 +178,14 @@ class Trainer(object):
             if self.train_dataloader.dataset.need_reset and epoch > start_epoch:
                 self.train_dataloader = build_dataloader(self.cfg, 'Train', self.logger, epoch=epoch-1)
             reader_start = time.time()
-            for idx, batch in enumerate(self.train_dataloader):
+            train_pbar = tqdm(
+                enumerate(self.train_dataloader),
+                total=len(self.train_dataloader),
+                desc=f'Epoch [{epoch}/{epoch_num}]',
+                leave=True,
+                disable=self.local_rank != 0,
+            )
+            for idx, batch in train_pbar:
                 batch = [t.to(dtype=torch.float32, device=self.device) for t in batch]
                 self.optimizer.zero_grad()
                 train_reader_cost += time.time() - reader_start
@@ -223,6 +230,19 @@ class Trainer(object):
                     for k, v in train_stats.get().items():
                         self.writer.add_scalar(f'TRAIN/{k}', v, global_step)
 
+                if self.wandb_run is not None:
+                    self.wandb_run.log({f'train/{k}': v for k, v in train_stats.get().items()}, step=global_step)
+
+                if self.local_rank == 0:
+                    cur_stats = train_stats.get()
+                    eta_sec = ((epoch_num + 1 - epoch) * len(self.train_dataloader) - idx - 1) * eta_meter.avg
+                    eta_sec_format = str(datetime.timedelta(seconds=int(eta_sec)))
+                    train_pbar.set_postfix({
+                        'loss': f'{cur_stats.get("loss", 0):.4f}',
+                        'lr': f'{stats["lr"]:.2e}',
+                        'eta': eta_sec_format,
+                    })
+
                 if self.local_rank == 0 and (
                         (global_step > 0 and global_step % print_batch_step == 0) or
                         (idx >= len(self.train_dataloader) - 1)):
@@ -236,11 +256,13 @@ class Trainer(object):
                             f'avg_samples: {total_samples / print_batch_step}, '
                             f'ips: {total_samples / train_batch_cost:.5f} samples/s, '
                             f'eta: {eta_sec_format}')
-                    self.logger.info(strs)
+                    tqdm.write(strs)
+                    # self.logger.info(strs)
                     total_samples = 0
                     train_reader_cost = 0.0
                     train_batch_cost = 0.0
                 reader_start = time.time()
+            train_pbar.close()
             # eval
             if self.local_rank == 0 and epoch > start_eval_epoch and (epoch - start_eval_epoch) % eval_epoch_step == 0:
                 cur_metric = self.eval()
@@ -253,12 +275,20 @@ class Trainer(object):
                         if isinstance(v, (float, int)):
                             self.writer.add_scalar(f'EVAL/{k}', cur_metric[k], global_step)
 
+                if self.wandb_run is not None:
+                    self.wandb_run.log(
+                        {f'eval/{k}': v for k, v in cur_metric.items() if isinstance(v, (float, int))},
+                        step=global_step,
+                    )
+
                 if cur_metric[self.eval_class.main_indicator] >= best_metric[self.eval_class.main_indicator]:
                     best_metric.update(cur_metric)
                     best_metric['best_epoch'] = epoch
                     if self.writer is not None:
                         self.writer.add_scalar(f'EVAL/best_{self.eval_class.main_indicator}',
                                                best_metric[self.eval_class.main_indicator], global_step)
+                    if self.wandb_run is not None:
+                        self.wandb_run.summary[f'best_{self.eval_class.main_indicator}'] = best_metric[self.eval_class.main_indicator]
                     save_ckpt(self.model, self.cfg, self.optimizer, self.lr_scheduler, epoch, global_step, best_metric,
                               is_best=True)
                 best_str = f"best metric, {', '.join(['{}: {}'.format(k, v) for k, v in best_metric.items()])}"
@@ -271,6 +301,8 @@ class Trainer(object):
         self.logger.info(best_str)
         if self.writer is not None:
             self.writer.close()
+        if self.wandb_run is not None:
+            self.wandb_run.finish()
         if torch.cuda.device_count() > 1:
             torch.distributed.destroy_process_group()
 
