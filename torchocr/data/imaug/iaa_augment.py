@@ -1,4 +1,15 @@
 import numpy as np
+
+# imgaug uses np.sctypes which was removed in NumPy 2.0
+if not hasattr(np, 'sctypes'):
+    np.sctypes = {
+        'uint': [np.uint8, np.uint16, np.uint32, np.uint64],
+        'int': [np.int8, np.int16, np.int32, np.int64],
+        'float': [np.float16, np.float32, np.float64],
+        'complex': [np.complex64, np.complex128],
+        'others': [bool, object, bytes, str, np.void],
+    }
+
 import imgaug
 import imgaug.augmenters as iaa
 
