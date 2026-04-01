@@ -38,8 +38,10 @@ def main(cfg):
     global_config = cfg['Global']
 
     # build model
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = build_model(cfg['Architecture'])
     load_ckpt(model, cfg)
+    model.to(device)
     model.eval()
 
     # build post process
@@ -62,7 +64,7 @@ def main(cfg):
 
             images = np.expand_dims(batch[0], axis=0)
             shape_list = np.expand_dims(batch[1], axis=0)
-            images = torch.from_numpy(images)
+            images = torch.from_numpy(images).to(device)
             with torch.no_grad():
                 preds = model(images)
             post_result = post_process_class(preds, [-1, shape_list])
