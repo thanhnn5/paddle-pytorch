@@ -46,7 +46,8 @@ def region_wise_random_select(regions, max_size):
     selected_values = []
     for index in selected_index:
         axis = regions[index]
-        xx = int(np.random.choice(axis, size=1))
+        # xx = int(np.random.choice(axis, size=1))
+        xx = int(np.random.choice(axis))
         selected_values.append(xx)
     xmin = min(selected_values)
     xmax = max(selected_values)
