@@ -65,6 +65,11 @@ python tools/infer/predict_rec.py \
   --image_dir=doc/imgs_words/en/word_1.png
 ```
 
+### Custom metrics & visualization
+- Inference with fine-tuned model
+- Prepare `labels.txt` and select `predictions.txt` files
+- Use [this notebook](tools/visualize_detections.ipynb) to compute metrics and visualize results
+
 ref:
 
 1. https://github.com/PaddlePaddle/PaddleOCR
