@@ -18,7 +18,7 @@ def load_torch_model(config: dict, device: str, torch_pth: str):
     if device == "gpu":
         device = "cuda"
     model = build_model(config)
-    model.load_state_dict(torch.load(torch_pth)["state_dict"])
+    model.load_state_dict(torch.load(torch_pth, map_location=device)["state_dict"])
     model.eval()
     model = model.to(device)
     return model
