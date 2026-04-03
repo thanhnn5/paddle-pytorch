@@ -65,15 +65,16 @@ def main():
     with torch.no_grad():
         if args.swap_channel:
             # PyTorch model expects channel-first; x is channel-last (e.g. 1,H,W,3)
-            torch_out = torch_model_fp16(x.half().permute(0, 3, 1, 2)).float()
+            torch_out = torch_model_fp16(x.half().permute(0, 3, 1, 2))
         else:
-            torch_out = torch_model_fp16(x.half()).float()
+            torch_out = torch_model_fp16(x.half())
 
     # Flatten dict/tuple outputs to a single tensor for comparison
     if isinstance(torch_out, dict):
         torch_out = next(iter(torch_out.values()))
     if isinstance(torch_out, (tuple, list)):
         torch_out = torch_out[0]
+    torch_out = torch_out.float()
 
     tflite_out = edge_model(x.numpy())
     if isinstance(tflite_out, dict):
