@@ -151,7 +151,7 @@ Eval:
       - ./train_data/icdar2015/text_localization/test_icdar2015_label.txt
     transforms:
     - DecodeImage:
-        img_mode: BGR
+        img_mode: RGB
         channel_first: false
     - DetLabelEncode: null
     - DetResizeForTest:
