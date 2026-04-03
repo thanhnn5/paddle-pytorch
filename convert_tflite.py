@@ -58,14 +58,16 @@ def main():
         edge_model = litert_torch.convert(torch_model.eval(), sample_inputs)
     edge_model.export(output)
 
-    # Verify converted model output matches PyTorch model
+    # Verify converted model output matches PyTorch model (FP16 for fair comparison
+    # against FP16 delegates like XNNPACK/CoreML)
     x = sample_inputs[0]
+    torch_model_fp16 = torch_model.half()
     with torch.no_grad():
         if args.swap_channel:
             # PyTorch model expects channel-first; x is channel-last (e.g. 1,H,W,3)
-            torch_out = torch_model(x.permute(0, 3, 1, 2))
+            torch_out = torch_model_fp16(x.half().permute(0, 3, 1, 2)).float()
         else:
-            torch_out = torch_model(x)
+            torch_out = torch_model_fp16(x.half()).float()
 
     # Flatten dict/tuple outputs to a single tensor for comparison
     if isinstance(torch_out, dict):
