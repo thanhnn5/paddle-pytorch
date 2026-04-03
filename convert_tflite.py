@@ -58,6 +58,30 @@ def main():
         edge_model = litert_torch.convert(torch_model.eval(), sample_inputs)
     edge_model.export(output)
 
+    # Verify converted model output matches PyTorch model
+    x = sample_inputs[0]
+    with torch.no_grad():
+        if args.swap_channel:
+            # PyTorch model expects channel-first; x is channel-last (e.g. 1,H,W,3)
+            torch_out = torch_model(x.permute(0, 3, 1, 2))
+        else:
+            torch_out = torch_model(x)
+
+    # Flatten dict/tuple outputs to a single tensor for comparison
+    if isinstance(torch_out, dict):
+        torch_out = next(iter(torch_out.values()))
+    if isinstance(torch_out, (tuple, list)):
+        torch_out = torch_out[0]
+
+    tflite_out = edge_model(x.numpy())
+    if isinstance(tflite_out, (tuple, list)):
+        tflite_out = tflite_out[0]
+    tflite_tensor = torch.from_numpy(tflite_out)
+
+    match = torch.allclose(torch_out, tflite_tensor, atol=1e-3, rtol=1e-3)
+    max_diff = (torch_out - tflite_tensor).abs().max().item()
+    print(f"Verification {'PASSED' if match else 'FAILED'} — max abs diff: {max_diff:.6f}")
+
 
 if __name__ == "__main__":
     main()
