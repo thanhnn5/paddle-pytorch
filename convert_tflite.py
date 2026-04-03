@@ -80,9 +80,18 @@ def main():
         tflite_out = tflite_out[0]
     tflite_tensor = torch.from_numpy(tflite_out)
 
-    match = torch.allclose(torch_out, tflite_tensor, atol=1e-3, rtol=1e-3)
-    max_diff = (torch_out - tflite_tensor).abs().max().item()
-    print(f"Verification {'PASSED' if match else 'FAILED'} — max abs diff: {max_diff:.6f}")
+    print("Torchout: ", torch_out.shape)
+    print("Tfliteout: ", tflite_tensor.shape)
+
+    diff = (torch_out - tflite_tensor).abs()
+    max_diff = diff.max().item()
+    mean_diff = diff.mean().item()
+    pct_above_1e3 = (diff > 1e-3).float().mean().item() * 100
+    match = max_diff < 1e-3
+    print(f"Verification {'PASSED' if match else 'FAILED'}")
+    print(f"  max  abs diff : {max_diff:.6f}")
+    print(f"  mean abs diff : {mean_diff:.6f}")
+    print(f"  % pixels > 1e-3: {pct_above_1e3:.2f}%")
 
 
 if __name__ == "__main__":
