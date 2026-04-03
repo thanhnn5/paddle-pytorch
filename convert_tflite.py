@@ -29,7 +29,6 @@ def parse_args():
         required=True,
         help="Input shape as comma-separated ints, e.g. 1,3,48,320",
     )
-    parser.add_argument("--backend", type=str, default="coreml")
     parser.add_argument("--swap_channel", action="store_true", default=False)
     return parser.parse_args()
 
@@ -39,7 +38,7 @@ def main():
 
     dims = [int(x) for x in args.dims.split(",")]
     output = args.output or (
-        f"weights/{os.path.basename(args.weights).rsplit('.', 1)[0]}_{args.backend}.tflite"
+        f"weights/{os.path.basename(args.weights).rsplit('.', 1)[0]}.tflite"
     )
 
     device = "cpu"
