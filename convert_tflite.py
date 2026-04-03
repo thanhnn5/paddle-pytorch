@@ -74,6 +74,8 @@ def main():
         torch_out = torch_out[0]
 
     tflite_out = edge_model(x.numpy())
+    if isinstance(tflite_out, dict):
+        tflite_out = next(iter(tflite_out.values()))
     if isinstance(tflite_out, (tuple, list)):
         tflite_out = tflite_out[0]
     tflite_tensor = torch.from_numpy(tflite_out)
