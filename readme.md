@@ -23,19 +23,19 @@ CUDA_VISIBLE_DEVICES=0 python tools/eval.py -c configs/rec/PP-OCRv3/ch_PP-OCRv3_
 
 ### infer
 ```sh
-python tools/infer_rec.py -c configs/rec/PP-OCRv3/ch_PP-OCRv3_rec_distillation.yml -o Global.pretrained_model=xxx.pth
+python tools/infer/pytorch/infer_rec.py -c configs/rec/PP-OCRv3/ch_PP-OCRv3_rec_distillation.yml -o Global.pretrained_model=xxx.pth
 ```
 
 ### export
 ```sh
 # Export to pytorch
 # Ensure the PaddleOCR model is exported with the old format
-python tools/export.py -c configs/rec/PP-OCRv3/ch_PP-OCRv3_rec_distillation.yml -o Global.pretrained_model=xxx.pth
+python tools/deployment/export.py -c configs/rec/PP-OCRv3/ch_PP-OCRv3_rec_distillation.yml -o Global.pretrained_model=xxx.pth
 
 
-# Export to torch executorch, check convert_executorch.py for more details
+# Export to torch executorch, check tools/deployment/export_executorch.py for more details
 # Static shape is more stable and faster
-python convert_executorch.py
+python tools/deployment/export_executorch.py
 ```
 
 

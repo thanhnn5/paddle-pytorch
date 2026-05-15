@@ -7,7 +7,7 @@ import sys
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(__dir__)
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..", "..")))
 
 import torch
 
@@ -17,9 +17,9 @@ from torchocr.utils.ckpt import load_ckpt
 from torchocr.utils.logging import get_logger
 from torchocr import Config
 from tools.utility import update_rec_head_out_channels, ArgsParser
-from tools.infer_rec import build_rec_process
-from tools.infer_det import build_det_process
-from tools.infer_cls import build_cls_process
+from tools.infer.pytorch.infer_rec import build_rec_process
+from tools.infer.pytorch.infer_det import build_det_process
+from tools.infer.pytorch.infer_cls import build_cls_process
 
 
 def to_onnx(
@@ -29,6 +29,7 @@ def to_onnx(
     sava_path="model.onnx",
     opset_version=24,
     dynamic=False,
+    simplify_onnx=True,
 ):
     if dynamic:
         input_axis_name = ["batch_size", "channel", "in_width", "int_height"]
@@ -55,6 +56,50 @@ def to_onnx(
             output_names=["output"],  # the model's output names
             opset_version=opset_version,
         )
+
+    if simplify_onnx:
+        _simplify_onnx_in_place(sava_path)
+
+
+def _simplify_onnx_in_place(onnx_path):
+    try:
+        import onnx
+        from onnxsim import simplify
+    except ImportError as e:
+        get_logger().warning(f"skip onnxsim ({e}); install with `pip install onnxsim onnx`")
+        return
+
+    logger = get_logger()
+    model = onnx.load(onnx_path, load_external_data=True)
+    before = len(model.graph.node)
+    model_sim, ok = simplify(model)
+    if not ok:
+        logger.warning("onnxsim validation failed; keeping unsimplified model")
+        return
+    after = len(model_sim.graph.node)
+
+    # If the original was saved with external weights, keep the external-data
+    # layout so we don't bloat the .onnx file past the 2GB protobuf limit.
+    has_external = any(
+        tensor.data_location == onnx.TensorProto.EXTERNAL
+        for tensor in model.graph.initializer
+    )
+    if has_external:
+        ext_name = os.path.basename(onnx_path) + ".data"
+        ext_path = os.path.join(os.path.dirname(onnx_path), ext_name)
+        if os.path.exists(ext_path):
+            os.remove(ext_path)
+        onnx.save(
+            model_sim,
+            onnx_path,
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=ext_name,
+            size_threshold=1024,
+        )
+    else:
+        onnx.save(model_sim, onnx_path)
+    logger.info(f"onnxsim: {before} -> {after} nodes ({onnx_path})")
 
 
 def export_single_model(
