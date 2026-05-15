@@ -18,7 +18,7 @@ class ONNXEngine:
         providers = ["CPUExecutionProvider"]
         if use_gpu:
             providers = [
-                "TensorrtExecutionProvider",
+                "MPSExecutionProvider",
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider"
             ],
