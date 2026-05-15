@@ -4,7 +4,7 @@ import subprocess
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(__dir__)
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(__dir__, '../../..')))
 
 import cv2
 import copy
@@ -15,9 +15,9 @@ import logging
 from PIL import Image
 
 from tools.infer.utility import get_minarea_rect_crop, get_rotate_crop_image, parse_args,check_gpu
-from tools.infer.predict_det import TextDetector
-from tools.infer.predict_cls import TextClassifier
-from tools.infer.predict_rec import TextRecognizer
+from tools.infer.onnx.predict_det import TextDetector
+from tools.infer.onnx.predict_cls import TextClassifier
+from tools.infer.onnx.predict_rec import TextRecognizer
 from torchocr.utils.utility import get_image_file_list, check_and_read
 from torchocr.utils.logging import get_logger
 from torchocr.utils.visual import draw_system

@@ -42,7 +42,7 @@ python convert_executorch.py
 ### predict
 ```sh
 # det + cls + rec
-python tools/infer/predict_system.py \
+python tools/infer/onnx/predict_system.py \
   --det_model_dir=path/to/det/export_dir  \
   --cls_model_dir=path/to/cls/export_dir  \
   --rec_model_dir=path/to/rec/export_dir  \
@@ -50,17 +50,17 @@ python tools/infer/predict_system.py \
   --use_angle_cls=true
 
 # det
-python tools/infer/predict_det.py \
+python tools/infer/onnx/predict_det.py \
   --det_model_dir=path/to/det/export_dir \
   --image_dir=doc/imgs/1.jpg
 
 # cls
-python tools/infer/predict_cls.py \
+python tools/infer/onnx/predict_cls.py \
   --cls_model_dir=path/to/cls/export_dir \
   --image_dir=doc/imgs/1.jpg
 
 # rec
-python tools/infer/predict_rec.py \
+python tools/infer/onnx/predict_rec.py \
   --rec_model_dir=path/to/rec/export_dir \
   --image_dir=doc/imgs_words/en/word_1.png
 ```

@@ -3,7 +3,7 @@ import sys
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(__dir__)
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(__dir__, '../../..')))
 
 import cv2
 import json
@@ -16,7 +16,7 @@ from torchocr.data.imaug import create_operators, transform
 from torchocr.utils.logging import get_logger
 from torchocr.utils.visual import draw_det
 from torchocr.utils.utility import get_image_file_list, check_and_read
-from tools.infer.onnx_engine import ONNXEngine
+from tools.infer.onnx.engine import ONNXEngine
 from tools.infer.utility import check_gpu, parse_args
 
 logger = get_logger()
