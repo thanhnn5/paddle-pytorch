@@ -32,7 +32,9 @@ from torchocr.modeling.backbones.det_convnext import ConvNeXtDetBackbone
 from torchocr.modeling.backbones.det_convnextv2 import ConvNeXtV2Backbone
 from torchocr.utils.ckpt import load_pretrained_params
 from torchocr.utils.logging import get_logger
-from tools.distill.dataset import UnlabeledImageFolder, build_train_transform
+from tools.distill.dataset import (
+    UnlabeledImageFolder, build_train_transform, build_eval_transform,
+)
 
 
 def pick_device(arg: str) -> torch.device:
@@ -146,7 +148,70 @@ def parse_args():
     p.add_argument("--log-every", type=int, default=20)
     p.add_argument("--save-every", type=int, default=5, help="epochs between checkpoints")
     p.add_argument("--seed", type=int, default=0)
+    # Held-out probe: fixed, unaugmented images measured at fixed intervals so
+    # different runs can be compared on the same metric.
+    p.add_argument("--probe-images", default=None,
+                   help="folder of held-out images for clean cosine/MSE probes "
+                        "(default: reuse --images with deterministic order)")
+    p.add_argument("--probe-count", type=int, default=64,
+                   help="number of probe images to use; 0 disables")
+    p.add_argument("--probe-every", type=int, default=200,
+                   help="run probe every N steps")
+    p.add_argument("--probe-batch-size", type=int, default=16)
     return p.parse_args()
+
+
+@torch.no_grad()
+def run_probe(teacher, student, adapters, align_stages, probe_tensors, device, amp):
+    """Run a clean probe: identical preprocessing, no aug, deterministic order.
+
+    Returns dict with per-stage mean MSE (unnormalized + LN-normalized) and
+    cosine similarity. Mean over the probe set.
+    """
+    teacher.eval()
+    student.eval()
+    adapters.eval()
+
+    mse_raw = [0.0] * len(align_stages)
+    mse_ln = [0.0] * len(align_stages)
+    cos = [0.0] * len(align_stages)
+    n = 0
+    for batch in probe_tensors:
+        x = batch.to(device, non_blocking=True)
+        with autocast_for(device, amp):
+            t_feats = teacher(x)
+            s_feats = student(x)
+        bs = x.size(0)
+        for i, (adapter, stage_idx) in enumerate(zip(adapters, align_stages)):
+            s = adapter(s_feats[stage_idx]).float()
+            t = t_feats[stage_idx].float()
+            mse_raw[i] += float(F.mse_loss(s, t).item()) * bs
+            mse_ln[i] += float(F.mse_loss(channel_layernorm(s),
+                                          channel_layernorm(t)).item()) * bs
+            cos[i] += cosine_sim_per_stage(s, t) * bs
+        n += bs
+
+    student.train()
+    adapters.train()
+    return {
+        "n": n,
+        "mse_raw": [v / n for v in mse_raw],
+        "mse_ln": [v / n for v in mse_ln],
+        "cos": [v / n for v in cos],
+    }
+
+
+def build_probe_batches(images_root, count, img_size, batch_size, num_workers):
+    """Deterministic probe batches: first `count` images (sorted), no shuffle."""
+    transform = build_eval_transform(img_size=img_size)
+    ds = UnlabeledImageFolder(images_root, transform)
+    indices = list(range(min(count, len(ds))))
+    from torch.utils.data import Subset
+    sub = Subset(ds, indices)
+    loader = DataLoader(sub, batch_size=batch_size, shuffle=False,
+                        num_workers=num_workers, drop_last=False)
+    # Materialize so probe is fast and identical every call.
+    return [b for b in loader]
 
 
 def warmup_cosine_lr(step, total_steps, warmup_steps, peak_lr, min_lr=1e-6):
@@ -204,7 +269,18 @@ def main():
     if args.ema_decay > 0:
         ema_state = {k: v.detach().clone() for k, v in student.state_dict().items()}
 
+    probe_batches = None
+    if args.probe_count > 0:
+        probe_root = args.probe_images or args.images
+        probe_batches = build_probe_batches(
+            probe_root, args.probe_count, args.img_size,
+            args.probe_batch_size, args.num_workers,
+        )
+        logger.info(f"probe set: {sum(b.size(0) for b in probe_batches)} images "
+                    f"from {probe_root}")
+
     history = []
+    probe_history = []
     global_step = 0
     t0 = time.time()
     for epoch in range(args.epochs):
@@ -268,6 +344,18 @@ def main():
                     "elapsed_s": elapsed,
                 })
 
+            if probe_batches and global_step > 0 and global_step % args.probe_every == 0:
+                probe = run_probe(teacher, student, adapters, align,
+                                  probe_batches, device, args.amp)
+                probe["step"] = global_step
+                probe["epoch"] = epoch
+                probe_history.append(probe)
+                logger.info(
+                    f"  PROBE step={global_step} "
+                    f"cos=[{','.join(f'{c:.3f}' for c in probe['cos'])}] "
+                    f"mse_ln=[{','.join(f'{m:.4f}' for m in probe['mse_ln'])}]"
+                )
+
             global_step += 1
         else:
             # save end-of-epoch checkpoint
@@ -286,6 +374,20 @@ def main():
         # broke out of inner loop because of max-steps
         break
 
+    # Final probe so every sweep run ends with a comparable metric, even if
+    # global_step % probe_every != 0.
+    if probe_batches:
+        probe = run_probe(teacher, student, adapters, align,
+                          probe_batches, device, args.amp)
+        probe["step"] = global_step
+        probe["epoch"] = args.epochs - 1
+        probe_history.append(probe)
+        logger.info(
+            f"  FINAL PROBE step={global_step} "
+            f"cos=[{','.join(f'{c:.3f}' for c in probe['cos'])}] "
+            f"mse_ln=[{','.join(f'{m:.4f}' for m in probe['mse_ln'])}]"
+        )
+
     final = os.path.join(args.output, "student_final.pth")
     torch.save({
         "student": student.state_dict(),
@@ -295,6 +397,17 @@ def main():
     }, final)
     with open(os.path.join(args.output, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
+    if probe_history:
+        with open(os.path.join(args.output, "probe.json"), "w") as f:
+            json.dump(probe_history, f, indent=2)
+        # One-line summary file for easy sweep aggregation
+        with open(os.path.join(args.output, "summary.json"), "w") as f:
+            json.dump({
+                "args": vars(args),
+                "final_probe": probe_history[-1],
+                "total_steps": global_step,
+                "wallclock_s": time.time() - t0,
+            }, f, indent=2)
     logger.info(f"done. final={final}")
 
 
