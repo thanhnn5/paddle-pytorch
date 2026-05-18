@@ -184,6 +184,11 @@ def parse_args():
     p.add_argument("--probe-every", type=int, default=200,
                    help="run probe every N steps")
     p.add_argument("--probe-batch-size", type=int, default=16)
+    p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
+    p.add_argument("--wandb-project", default="convnext-distill")
+    p.add_argument("--wandb-name", default=None)
+    p.add_argument("--wandb-entity", default=None)
+    p.add_argument("--wandb-tags", nargs="*", default=None)
     return p.parse_args()
 
 
@@ -209,7 +214,8 @@ def run_probe(teacher, student, adapters, align_stages, probe_tensors, device, a
             s_feats = student(x)
         bs = x.size(0)
         for i, (adapter, stage_idx) in enumerate(zip(adapters, align_stages)):
-            s = adapter(s_feats[stage_idx]).float()
+            # Features may be bf16/fp16 under autocast; adapter params are fp32.
+            s = adapter(s_feats[stage_idx].float()).float()
             t = t_feats[stage_idx].float()
             mse_raw[i] += float(F.mse_loss(s, t).item()) * bs
             mse_ln[i] += float(F.mse_loss(channel_layernorm(s),
@@ -260,6 +266,19 @@ def main():
     logger = get_logger()
     device = pick_device(args.device)
     logger.info(f"device: {device}")
+
+    wandb_run = None
+    if args.wandb:
+        import wandb
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_name or os.path.basename(args.output.rstrip("/")),
+            entity=args.wandb_entity,
+            tags=args.wandb_tags,
+            config=vars(args),
+            dir=args.output,
+        )
+        logger.info(f"wandb: {wandb_run.url}")
 
     teacher = build_teacher(args.teacher_ckpt, device)
     student = build_student(args.student_size, device)
@@ -376,6 +395,19 @@ def main():
                     "cos": [float(c) for c in cos_per_stage],
                     "elapsed_s": elapsed,
                 })
+                if wandb_run is not None:
+                    log = {
+                        "train/loss": float(loss.item()),
+                        "train/loss_mse": float(loss_mse.item()),
+                        "train/loss_cos": float(loss_cos),
+                        "train/lr": lr,
+                        "train/epoch": epoch,
+                        "train/elapsed_s": elapsed,
+                    }
+                    for i, st in enumerate(align):
+                        log[f"train/mse_stage{st}"] = float(mse_per_stage[i].item())
+                        log[f"train/cos_stage{st}"] = float(cos_per_stage[i])
+                    wandb_run.log(log, step=global_step)
 
             if probe_batches and global_step > 0 and global_step % args.probe_every == 0:
                 probe = run_probe(teacher, student, adapters, align,
@@ -388,6 +420,13 @@ def main():
                     f"cos=[{','.join(f'{c:.3f}' for c in probe['cos'])}] "
                     f"mse_ln=[{','.join(f'{m:.4f}' for m in probe['mse_ln'])}]"
                 )
+                if wandb_run is not None:
+                    plog = {}
+                    for i, st in enumerate(align):
+                        plog[f"probe/cos_stage{st}"] = probe["cos"][i]
+                        plog[f"probe/mse_ln_stage{st}"] = probe["mse_ln"][i]
+                        plog[f"probe/mse_raw_stage{st}"] = probe["mse_raw"][i]
+                    wandb_run.log(plog, step=global_step)
 
             global_step += 1
         else:
@@ -420,6 +459,12 @@ def main():
             f"cos=[{','.join(f'{c:.3f}' for c in probe['cos'])}] "
             f"mse_ln=[{','.join(f'{m:.4f}' for m in probe['mse_ln'])}]"
         )
+        if wandb_run is not None:
+            flog = {}
+            for i, st in enumerate(align):
+                flog[f"probe/final_cos_stage{st}"] = probe["cos"][i]
+                flog[f"probe/final_mse_ln_stage{st}"] = probe["mse_ln"][i]
+            wandb_run.log(flog, step=global_step)
 
     final = os.path.join(args.output, "student_final.pth")
     torch.save({
@@ -442,6 +487,8 @@ def main():
                 "wallclock_s": time.time() - t0,
             }, f, indent=2)
     logger.info(f"done. final={final}")
+    if wandb_run is not None:
+        wandb_run.finish()
 
 
 if __name__ == "__main__":

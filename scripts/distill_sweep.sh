@@ -63,7 +63,7 @@ for seed in "${SEEDS[@]}"; do
                         --cosine-weight "$cw" \
                         --align-stages $stages \
                         --seed "$seed" \
-                        --batch-size 32      # smaller for fast trials
+                        --batch-size "${BATCH_SIZE:-32}"
                 done
             done
         done
