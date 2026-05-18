@@ -16,6 +16,7 @@ import argparse
 import json
 import math
 import os
+import random
 import sys
 import time
 from contextlib import nullcontext
@@ -23,10 +24,29 @@ from contextlib import nullcontext
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..", "..")))
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+
+
+def seed_everything(seed: int):
+    """Seed Python, NumPy, and PyTorch RNGs so trials are reproducible."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def seed_worker(worker_id: int):
+    """DataLoader worker_init_fn: ensure each worker has a deterministic RNG
+    derived from the base seed, so albumentations (numpy) augmentation order
+    is reproducible across runs with the same --seed."""
+    base = torch.initial_seed() % (2**32)
+    np.random.seed(base)
+    random.seed(base)
 
 from torchocr.modeling.backbones.det_convnext import ConvNeXtDetBackbone
 from torchocr.modeling.backbones.det_convnextv2 import ConvNeXtV2Backbone
@@ -148,6 +168,12 @@ def parse_args():
     p.add_argument("--log-every", type=int, default=20)
     p.add_argument("--save-every", type=int, default=5, help="epochs between checkpoints")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--deterministic", action="store_true",
+                   help="enable torch.use_deterministic_algorithms(True) + "
+                        "cudnn deterministic mode. Required for bit-exact "
+                        "reproducibility on CUDA; ~10-30%% slower. MPS still "
+                        "has hardware-level atomic nondeterminism that this "
+                        "flag cannot fix.")
     # Held-out probe: fixed, unaugmented images measured at fixed intervals so
     # different runs can be compared on the same metric.
     p.add_argument("--probe-images", default=None,
@@ -223,7 +249,12 @@ def warmup_cosine_lr(step, total_steps, warmup_steps, peak_lr, min_lr=1e-6):
 
 def main():
     args = parse_args()
-    torch.manual_seed(args.seed)
+    seed_everything(args.seed)
+    if args.deterministic:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     os.makedirs(args.output, exist_ok=True)
 
     logger = get_logger()
@@ -245,10 +276,12 @@ def main():
     dataset = UnlabeledImageFolder(args.images, transform)
     logger.info(f"dataset: {len(dataset)} images at {args.images}")
 
+    loader_generator = torch.Generator().manual_seed(args.seed)
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.num_workers, pin_memory=(device.type == "cuda"),
         persistent_workers=(args.num_workers > 0), drop_last=True,
+        worker_init_fn=seed_worker, generator=loader_generator,
     )
 
     params = [

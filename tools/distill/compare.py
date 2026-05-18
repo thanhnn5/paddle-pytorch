@@ -19,6 +19,9 @@ def main():
                    help="cos_last | cos_first | mse_ln_last | mse_ln_first | steps")
     p.add_argument("--sort-stage", type=int, default=-1,
                    help="which align-stage index to sort by (-1 = last)")
+    p.add_argument("--group-seeds", action="store_true",
+                   help="aggregate runs that share all hparams except --seed; "
+                        "show mean ± std across seeds")
     args = p.parse_args()
 
     paths = []
@@ -54,6 +57,9 @@ def main():
             "mse_ln_first": fp["mse_ln"][0],
             "mse_ln_last": fp["mse_ln"][idx],
         })
+
+    if args.group_seeds:
+        rows = _group_by_hparams(rows)
 
     key = args.sort_by
     reverse = key.startswith("cos")           # higher = better for cosine
@@ -91,6 +97,34 @@ def _fmt(v, w):
     else:
         s = str(v)
     return s.ljust(w)[:w]
+
+
+def _group_by_hparams(rows):
+    """Collapse rows sharing the same hparams (except name/seed) into one row
+    with mean values for the numeric metrics. `name` becomes `<base>×N` where
+    N is the seed count."""
+    from collections import defaultdict
+    import statistics
+
+    groups = defaultdict(list)
+    hparam_keys = ("lr", "img", "bs", "cos_w", "stages", "size")
+    metric_keys = ("cos_first", "cos_last", "mse_ln_first", "mse_ln_last",
+                   "steps", "wall_s")
+    for r in rows:
+        key = tuple(r[k] for k in hparam_keys)
+        groups[key].append(r)
+
+    out = []
+    for key, items in groups.items():
+        merged = {k: items[0][k] for k in hparam_keys}
+        merged["name"] = f"lr{key[0]}_img{key[1]}_cw{key[3]}_st{key[4]} ×{len(items)}"
+        for mk in metric_keys:
+            vals = [it[mk] for it in items]
+            merged[mk] = statistics.fmean(vals)
+            if len(vals) > 1:
+                merged[mk + "_std"] = statistics.stdev(vals)
+        out.append(merged)
+    return out
 
 
 if __name__ == "__main__":
