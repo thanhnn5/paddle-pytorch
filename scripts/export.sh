@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Export with fix size (this could be faster to inference)
-python tools/deployment/export.py -c configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml --type onnx \
+python tools/deployment/export_onnx.py -c configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml --type onnx \
   -o Global.pretrained_model=weights/dinov3/convnext_det_unfreeze.pth \
      Export.export_dir=output/export_convnext_det \
      "Export.export_shape=[1,3,1280,704]"
