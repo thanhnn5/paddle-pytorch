@@ -47,7 +47,7 @@ def run_probe(teacher, student, adapters, align_stages: List[int],
     for batch in probe_tensors:
         x = batch.to(device, non_blocking=True)
         with autocast_for(device, amp):
-            t_feats = teacher(x)
+            t_feats, _prob_map = teacher(x)
             s_feats = student(x)
         bs = x.size(0)
         for i, (adapter, stage_idx) in enumerate(zip(adapters, align_stages)):

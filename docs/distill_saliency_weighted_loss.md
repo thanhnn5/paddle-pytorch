@@ -1,8 +1,31 @@
 # Plan: Saliency-Weighted Distillation Loss (Option B)
 
-Status: **planned, not yet implemented.** Refactor of `tools/distill/` into
-decoupled modules precedes implementation so this change touches only `loss.py`
-and `model.py`.
+Status: **implemented.** See `tools/distill/{model,loss,train}.py`.
+
+## Empirical finding from smoke test
+
+On POD images, the teacher's DBHead probability map is **very sparse**:
+`mean ≈ 0.03`, `p50 ≈ 0.025`, fraction of pixels with prob > 0.5 ≈ **0.3%**.
+This is consistent with the user's observation that the address occupies a
+small fraction of pixels.
+
+With this sparsity, the original recommendation (α=0.1, β=1.0) barely shifts
+gradient influence toward text regions:
+
+| Config | per-pixel FG/BG ratio | Total gradient share on FG (0.3% of pixels) |
+|---|---|---|
+| no saliency (uniform) | 1:1 | 0.3% |
+| α=0.1, β=1.0 (original default) | 11:1 | ~3% |
+| **α=0.05, β=10** | **200:1** | **~38%** |
+
+**Default changed to α=0.05, β=10** in the CLI. With these values, the
+loss is approximately split 38%/62% between text and background gradient
+contribution — strong text emphasis without going fully hard-mask.
+
+If saliency-power is also used (e.g. `--saliency-power 0.5` to soften
+extremes, or `2.0` to sharpen), recompute the effective weights. The
+`sal=mean…/p50…/frac>0.5=…` print at every log step lets you see the actual
+saliency distribution during training.
 
 ## Why
 

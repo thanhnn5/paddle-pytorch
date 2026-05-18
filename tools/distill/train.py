@@ -69,6 +69,24 @@ def parse_args():
                    help="weight for the cosine-similarity loss term")
     p.add_argument("--no-layernorm", action="store_true",
                    help="disable per-stage channel-wise LN before MSE")
+    # Saliency-weighted loss (Option B; see docs/distill_saliency_weighted_loss.md).
+    p.add_argument("--saliency", action="store_true",
+                   help="weight per-pixel loss by the teacher's DBHead "
+                        "probability map. Requires --teacher-config.")
+    p.add_argument("--teacher-config", default=None,
+                   help="YAML config for the full BaseModel teacher; needed "
+                        "for --saliency (so we can build the full architecture "
+                        "and read the prob map from the head).")
+    p.add_argument("--saliency-alpha", type=float, default=0.05,
+                   help="background weight floor (>=0.05 recommended). "
+                        "Empirical default per docs/distill_saliency_weighted_loss.md.")
+    p.add_argument("--saliency-beta", type=float, default=10.0,
+                   help="foreground weight multiplier (text regions get "
+                        "alpha + beta*p weight where p in [0,1]). High beta "
+                        "because POD prob maps are sparse (mean ~0.03); see doc.")
+    p.add_argument("--saliency-power", type=float, default=1.0,
+                   help="raise saliency to this power before use; <1 softens "
+                        "extreme confidence, >1 sharpens (default 1 = no-op)")
     p.add_argument("--ema-decay", type=float, default=0.9995,
                    help="EMA decay; set to 0 to disable. Use 0.999 for short runs "
                         "(<50k steps), 0.9999 for very long runs (>500k steps).")
@@ -132,7 +150,17 @@ def main():
         )
         logger.info(f"wandb: {wandb_run.url}")
 
-    teacher = build_teacher(args.teacher_ckpt, device)
+    if args.saliency and not args.teacher_config:
+        raise SystemExit("--saliency requires --teacher-config (path to "
+                         "the BaseModel YAML, e.g. "
+                         "configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml)")
+    teacher = build_teacher(
+        args.teacher_ckpt, device,
+        full_model_config=args.teacher_config if args.saliency else None,
+    )
+    if args.saliency:
+        logger.info(f"saliency ON: alpha={args.saliency_alpha} "
+                    f"beta={args.saliency_beta} power={args.saliency_power}")
     student = build_student(args.student_size, device)
     teacher_ch = teacher.out_channels      # [96, 192, 384, 768]
     student_ch = student.out_channels      # [48, 96, 192, 384] for femto
@@ -196,7 +224,13 @@ def main():
 
             x = batch.to(device, non_blocking=True)
             with torch.no_grad(), autocast_for(device, args.amp):
-                t_feats = teacher(x)
+                t_feats, prob_map = teacher(x)
+
+            saliency = None
+            if args.saliency and prob_map is not None:
+                saliency = prob_map.detach().float()
+                if args.saliency_power != 1.0:
+                    saliency = saliency.clamp_min(0).pow(args.saliency_power)
 
             with autocast_for(device, args.amp):
                 s_feats = student(x)
@@ -204,6 +238,9 @@ def main():
                     s_feats, t_feats, adapters, align,
                     cosine_weight=args.cosine_weight,
                     layernorm=not args.no_layernorm,
+                    saliency=saliency,
+                    sal_alpha=args.saliency_alpha,
+                    sal_beta=args.saliency_beta,
                 )
 
             optimizer.zero_grad(set_to_none=True)
@@ -220,10 +257,17 @@ def main():
                 elapsed = time.time() - t0
                 mse_strs = ",".join(f"{ps.mse.item():.4f}" for ps in per_stage)
                 cos_strs = ",".join(f"{ps.cos_sim:.3f}" for ps in per_stage)
+                sal_str = ""
+                if saliency is not None:
+                    sal_mean = float(saliency.mean().item())
+                    sal_p50 = float(saliency.flatten(1).median(dim=1).values.mean().item())
+                    sal_frac = float((saliency > 0.5).float().mean().item())
+                    sal_str = f" sal=mean{sal_mean:.3f}/p50{sal_p50:.3f}/frac>0.5={sal_frac:.3f}"
                 logger.info(
                     f"ep={epoch} step={global_step}/{total_steps} "
                     f"lr={lr:.2e} loss={loss.item():.4f} "
-                    f"mse=[{mse_strs}] cos=[{cos_strs}] elapsed={elapsed:.0f}s"
+                    f"mse=[{mse_strs}] cos=[{cos_strs}]{sal_str} "
+                    f"elapsed={elapsed:.0f}s"
                 )
                 history.append({
                     "epoch": epoch, "step": global_step, "lr": lr,
