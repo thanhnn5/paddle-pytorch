@@ -12,3 +12,4 @@ cython
 attrdict
 pyyaml
 onnxruntime
+transformers==5.3.0

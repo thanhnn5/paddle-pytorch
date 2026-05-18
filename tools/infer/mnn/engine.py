@@ -59,16 +59,23 @@ class MNNEngine:
             self.output_names,
             runtime_manager=self.runtime_manager,
         )
+        # Persistent input placeholder, allocated lazily on the first run() so
+        # we can match the actual input shape. Reusing it across calls avoids
+        # rebuilding an expr.const from a fresh `tobytes()` buffer every
+        # invocation — that path costs ~500ms per call on Metal due to a CPU
+        # round-trip + re-upload, dominating total latency.
+        self._input_var = None
+        self._input_shape = None
 
     def run(self, image_numpy):
         image_numpy = np.ascontiguousarray(image_numpy.astype(np.float32))
-        input_var = expr.const(
-            image_numpy.tobytes(),
-            list(image_numpy.shape),
-            expr.NCHW,
-            expr.float,
-        )
-        outputs = self.net.forward([input_var])
+        shape = list(image_numpy.shape)
+        if self._input_var is None or self._input_shape != shape:
+            self._input_var = expr.placeholder(shape, expr.NCHW, expr.float)
+            self._input_shape = shape
+        self._input_var.write(image_numpy)
+
+        outputs = self.net.forward([self._input_var])
         results = []
         for out in outputs:
             out = expr.convert(out, expr.NCHW)
