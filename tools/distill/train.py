@@ -84,9 +84,12 @@ def parse_args():
                    help="foreground weight multiplier (text regions get "
                         "alpha + beta*p weight where p in [0,1]). High beta "
                         "because POD prob maps are sparse (mean ~0.03); see doc.")
-    p.add_argument("--saliency-power", type=float, default=1.0,
+    p.add_argument("--saliency-power", type=float, default=0.3,
                    help="raise saliency to this power before use; <1 softens "
-                        "extreme confidence, >1 sharpens (default 1 = no-op)")
+                        "extreme confidence, >1 sharpens. Default 0.3 was "
+                        "the clear winner on POD in a 600-step refine sweep "
+                        "(sal_mean→0.34, stage-3 mse_ln ~10%% lower than p=0.5/0.7). "
+                        "See docs/distill_saliency_weighted_loss.md.")
     p.add_argument("--ema-decay", type=float, default=0.9995,
                    help="EMA decay; set to 0 to disable. Use 0.999 for short runs "
                         "(<50k steps), 0.9999 for very long runs (>500k steps).")

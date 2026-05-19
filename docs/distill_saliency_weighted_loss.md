@@ -27,6 +27,34 @@ extremes, or `2.0` to sharpen), recompute the effective weights. The
 `sal=mean…/p50…/frac>0.5=…` print at every log step lets you see the actual
 saliency distribution during training.
 
+## Empirical finding from 600-step refine sweep (POD images)
+
+After picking α=0.05, β=10, we swept `power ∈ {0.3, 0.5, 0.7}` for 600 steps
+(batch=128, img=384, lr=1e-3, align=stages 2+3, cosine_weight=0, no warmup).
+See `output/sal_probe/refine_*` for raw logs.
+
+| power | sal_mean | held-out cos s2 | held-out cos s3 | mse_ln s2 | mse_ln s3 |
+|------:|---------:|----------------:|----------------:|----------:|----------:|
+| 0.3   | **0.34** | 0.837           | **0.789**       | **0.084** | **0.420** |
+| 0.5   | 0.17     | 0.835           | 0.765           | 0.087     | 0.469     |
+| 0.7   | 0.09     | 0.850           | 0.766           | 0.087     | 0.467     |
+
+**p=0.3 wins clearly** — stage-3 mse_ln is ~10% lower than the next best.
+Pushing `power` lower than 1.0 raises `sal_mean` toward ~0.5 (balanced
+FG/BG influence per the doc table above); p=0.3 lands at sal_mean=0.34,
+the sweet spot for these images.
+
+Caveats:
+- At 200 steps the ranking inverts (p=0.7 looked best). Saliency benefits
+  only show up after ~300 steps — **don't judge sal configs at <300 steps.**
+- Stage-2 cos_first is *lower* with p=0.3 because heavier text emphasis
+  initially pulls the student away from background features it had matched
+  for free; this reverses by step 400.
+
+**Defaults updated to α=0.05, β=10, power=0.3.** Set differently per
+dataset if your DBHead prob_map has very different sparsity (the
+`sal=mean…` print during a smoke-test trial is the cheapest signal).
+
 ## Why
 
 In POD images the address (the *only* text region we care about for detection)
