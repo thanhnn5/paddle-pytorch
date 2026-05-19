@@ -10,13 +10,13 @@
 set -euo pipefail
 
 python3 tools/distill/train.py \
-    --images data/det_v4/images \
-    --teacher-ckpt weights/dinov3/convnext_det_unfreeze.pth \
+    --images /home/jupyter/workspace/data/images \
+    --teacher-ckpt output/PP-OCRv5_convnext_det_unfreeze/best.pth \
     --teacher-config configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml \
-    --output output/distill_convnext_femto \
+    --output output/distill_convnext_femto_sal_long \
     --student-size femto \
     --img-size 384 \
-    --batch-size 256 \
+    --batch-size 128 \
     --num-workers 8 \
     --epochs 100 \
     --warmup-epochs 5 \
