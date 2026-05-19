@@ -30,7 +30,7 @@ DISTILL_CKPT=${DISTILL_CKPT:-output/distill_convnext_femto_long/student_final.pt
 USE_EMA=${USE_EMA:-1}
 EXTRACTED=${EXTRACTED:-weights/distilled/femto_backbone.pth}
 OUTPUT_DIR=${OUTPUT_DIR:-output/PP-OCRv5_convnextv2_femto_mobile_det}
-P1_EPOCHS=${P1_EPOCHS:-25}
+P1_EPOCHS=${P1_EPOCHS:-20}
 P2_EPOCHS=${P2_EPOCHS:-50}
 P1_LR=${P1_LR:-0.001}
 P2_LR=${P2_LR:-0.0005}
@@ -81,7 +81,7 @@ python3 tools/train.py \
     Eval.dataset.transforms[2].DetResizeForTest.limit_type=max \
     Eval.dataset.transforms[2].DetResizeForTest.keep_ratio=true
 
-P1_BEST="$P1_DIR/best.pth"
+P1_BEST="$P1_DIR/lastest.pth"
 if [ ! -f "$P1_BEST" ]; then
     # Fallback: some configs save best as `best_accuracy.pth` or similar.
     P1_BEST=$(ls -t "$P1_DIR"/*.pth 2>/dev/null | head -1)
