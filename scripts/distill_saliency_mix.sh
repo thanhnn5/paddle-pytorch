@@ -17,9 +17,9 @@
 
 set -euo pipefail
 
-POD_W=${POD_W:-0.5}
-COCO_W=${COCO_W:-0.3}
-ICDAR_W=${ICDAR_W:-0.2}
+POD_W=${POD_W:-0.75}
+COCO_W=${COCO_W:-0.2}
+ICDAR_W=${ICDAR_W:-0.05}
 
 python3 tools/distill/train.py \
     --images data/det_v4/images \
