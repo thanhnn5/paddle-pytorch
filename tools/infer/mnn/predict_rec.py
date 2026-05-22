@@ -47,7 +47,19 @@ class TextRecognizerMNN:
         cfg = Config(config_path).cfg
         self.postprocess_op = build_post_process(cfg['PostProcess'])
 
+        # Honor the img_mode the model was trained with. cv2.imread / det crops
+        # are BGR; flip to RGB if the rec was trained that way. PP-OCRv5 mobile
+        # rec is BGR (matches default), so this is a no-op for it.
+        self.img_mode = 'BGR'
+        for op in cfg.get('Transforms', []):
+            if 'DecodeImage' in op and op['DecodeImage']:
+                self.img_mode = op['DecodeImage'].get('img_mode', 'BGR')
+                break
+
     def resize_norm_img(self, img):
+        if self.img_mode == 'RGB':
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
         imgC, imgH, imgW = self.rec_image_shape
         h, w = img.shape[:2]
         ratio = w / float(h)

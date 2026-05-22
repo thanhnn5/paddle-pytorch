@@ -44,27 +44,25 @@ class TextDetectorMNN:
         self.det_algorithm = args.det_algorithm
         cfg = Config(config_path).cfg
 
-        pre_process_list = [{
-            'DetResizeForTest': {
-                'limit_side_len': args.det_limit_side_len,
-                'limit_type': args.det_limit_type,
-            }
-        }, {
-            'NormalizeImage': {
-                'std': [0.229, 0.224, 0.225],
-                'mean': [0.485, 0.456, 0.406],
-                'scale': '1./255.',
-                'order': 'hwc'
-            }
-        }, {
-            'ToCHWImage': None
-        }, {
-            'KeepKeys': {
-                'keep_keys': ['image', 'shape']
-            }
-        }]
+        # Pre/post-processing flows from the saved config.yaml; CLI args layer
+        # on top as a shallow dict merge. We strip DecodeImage (caller passes
+        # an ndarray, not bytes) and capture img_mode separately so we can
+        # BGR→RGB the input before NormalizeImage runs.
+        self.img_mode = (cfg.get('Transforms', [{}])[0].get('DecodeImage') or {}).get('img_mode', 'RGB')
+        resize = {'DetResizeForTest': {'limit_side_len': args.det_limit_side_len,
+                                       'limit_type':     args.det_limit_type}}
+        pre_process_list = [
+            resize if 'DetResizeForTest' in op else op
+            for op in cfg.get('Transforms', []) if 'DecodeImage' not in op
+        ]
         self.preprocess_op = create_operators(pre_process_list)
-        self.postprocess_op = build_post_process(cfg['PostProcess'])
+
+        post_overrides = {k: v for k, v in {
+            'thresh':       args.det_db_thresh,
+            'box_thresh':   args.det_db_box_thresh,
+            'unclip_ratio': args.det_db_unclip_ratio,
+        }.items() if v is not None}
+        self.postprocess_op = build_post_process({**cfg['PostProcess'], **post_overrides})
 
     def order_points_clockwise(self, pts):
         rect = np.zeros((4, 2), dtype="float32")
@@ -110,6 +108,11 @@ class TextDetectorMNN:
 
     def __call__(self, img):
         ori_im = img.copy()
+        # Caller hands us cv2.imread output (BGR). Convert to RGB when training
+        # used RGB so NormalizeImage's mean/std (in RGB order) line up with
+        # the right channels.
+        if self.img_mode == 'RGB':
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         data = {'image': img}
         st = time.time()
 
@@ -143,6 +146,11 @@ def parse_args():
     p.add_argument('--det_box_type', type=str, default='quad')
     p.add_argument('--det_limit_side_len', type=float, default=1280)
     p.add_argument('--det_limit_type', type=str, default='max')
+    # DBPostProcess overrides — leave at None to keep the values baked into
+    # the exported config.yaml (matches the ONNX path's behaviour).
+    p.add_argument('--det_db_thresh',       type=float, default=None)
+    p.add_argument('--det_db_box_thresh',   type=float, default=None)
+    p.add_argument('--det_db_unclip_ratio', type=float, default=None)
     p.add_argument('--mnn_backend', type=str, default='metal',
                    choices=sorted(BACKEND_MAP.keys()),
                    help='MNN forward type (see BACKEND_MAP in mnn_engine.py)')
