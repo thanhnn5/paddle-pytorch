@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stage-2 feature distillation: ConvNeXt-V2-femto student <- DINOv3-ConvNeXt-tiny teacher.
+# Stage-2 feature distillation: ConvNeXt-V2-pico student <- DINOv3-ConvNeXt-tiny teacher.
 # See docs/convnext_distillation.md (design) and
 # docs/distill_saliency_weighted_loss.md (saliency weighting + sweep results).
 #
@@ -13,8 +13,8 @@ python3 tools/distill/train.py \
     --images /home/jupyter/workspace/data/images \
     --teacher-ckpt output/PP-OCRv5_convnext_det_unfreeze/best.pth \
     --teacher-config configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml \
-    --output output/distill_convnext_femto_sal_long \
-    --student-size femto \
+    --output output/distill_convnext_pico_sal_long \
+    --student-size pico \
     --img-size 384 \
     --batch-size 128 \
     --num-workers 8 \
