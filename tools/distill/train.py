@@ -34,7 +34,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from torchocr.utils.logging import get_logger
-from tools.distill.dataset import UnlabeledImageFolder, build_train_transform
+from tools.distill.dataset import (
+    HFImageDataset, MixedImageDataset, UnlabeledImageFolder,
+    build_train_transform,
+)
 from tools.distill.loss import distill_loss
 from tools.distill.lr import warmup_cosine_lr
 from tools.distill.model import build_adapters, build_student, build_teacher
@@ -104,6 +107,28 @@ def parse_args():
                         "reproducibility on CUDA; ~10-30%% slower. MPS still "
                         "has hardware-level atomic nondeterminism that this "
                         "flag cannot fix.")
+    # Dataset mixing: optional HuggingFace scene-text datasets blended with
+    # the POD --images folder via weighted per-sample sampling. Empty by
+    # default = current single-folder behavior.
+    p.add_argument("--hf-dataset", action="append", default=[],
+                   help="HF repo id to add to the training mix (e.g. "
+                        "'howard-hou/COCO-Text'). Repeat for multiple datasets.")
+    p.add_argument("--hf-dataset-splits", action="append", default=[],
+                   help="comma-separated splits per --hf-dataset (e.g. "
+                        "'train,validation'). Default 'train'. Repeat to align "
+                        "with --hf-dataset order; missing = 'train'.")
+    p.add_argument("--pod-weight", type=float, default=0.5,
+                   help="sampling weight for --images folder when HF datasets "
+                        "are added. Remaining (1 - pod-weight) is split across "
+                        "HF datasets by --hf-weight if given, else equally.")
+    p.add_argument("--hf-weight", type=float, action="append", default=[],
+                   help="sampling weight per --hf-dataset. Order matches "
+                        "--hf-dataset. If unset, remaining weight after "
+                        "--pod-weight is split equally across HF datasets.")
+    p.add_argument("--hf-cache-dir", default=None,
+                   help="HF datasets cache dir (defaults to ~/.cache/huggingface)")
+    p.add_argument("--hf-max-samples", type=int, default=None,
+                   help="cap each HF dataset to first N samples (smoke tests)")
     # Held-out probe
     p.add_argument("--probe-images", default=None,
                    help="folder of held-out images for clean cosine/MSE probes "
@@ -175,8 +200,46 @@ def main():
     logger.info(f"aligning stages (0-indexed): {align}")
 
     transform = build_train_transform(img_size=args.img_size)
-    dataset = UnlabeledImageFolder(args.images, transform)
-    logger.info(f"dataset: {len(dataset)} images at {args.images}")
+    pod_ds = UnlabeledImageFolder(args.images, transform)
+
+    if not args.hf_dataset:
+        dataset = pod_ds
+        logger.info(f"dataset: {len(dataset)} images at {args.images}")
+    else:
+        # Build HF datasets and weighted mix.
+        hf_sources = []
+        for i, name in enumerate(args.hf_dataset):
+            splits_arg = (args.hf_dataset_splits[i].split(",")
+                          if i < len(args.hf_dataset_splits)
+                          else ["train"])
+            hf_ds = HFImageDataset(
+                name, transform, splits=splits_arg,
+                cache_dir=args.hf_cache_dir,
+                max_samples=args.hf_max_samples,
+            )
+            hf_sources.append(hf_ds)
+            logger.info(f"hf dataset[{i}]: {name} splits={splits_arg} "
+                        f"size={len(hf_ds)}")
+
+        # Resolve weights. pod_weight + sum(hf_weights) need not equal 1;
+        # MixedImageDataset normalizes. If --hf-weight not given, share the
+        # remaining (1 - pod_weight) equally across HF datasets.
+        if args.hf_weight:
+            if len(args.hf_weight) != len(hf_sources):
+                raise SystemExit(
+                    f"--hf-weight given {len(args.hf_weight)} times but "
+                    f"--hf-dataset given {len(hf_sources)} times; must match.")
+            hf_weights = list(args.hf_weight)
+        else:
+            remaining = max(0.0, 1.0 - args.pod_weight)
+            hf_weights = [remaining / len(hf_sources)] * len(hf_sources)
+
+        sources = [pod_ds] + hf_sources
+        weights = [args.pod_weight] + hf_weights
+        dataset = MixedImageDataset(sources, weights)
+        logger.info("mixed dataset composition (name, size, normalized weight):")
+        for name, size, w in dataset.describe():
+            logger.info(f"  {name}: size={size} weight={w:.3f}")
 
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=True,
