@@ -21,8 +21,8 @@ python3 tools/distill/train.py \
     --saliency-alpha 0.05 \
     --saliency-beta 10.0 \
     --saliency-power 1.0 \
-    --output output/distill_convnext_pico_saliency \
-    --student-size pico \
+    --output output/distill_convnext_femto_saliency \
+    --student-size femto \
     --img-size 384 \
     --batch-size 64 \
     --num-workers 8 \

@@ -36,8 +36,8 @@ python3 tools/distill/train.py \
     --pod-weight "$POD_W" \
     --hf-weight "$COCO_W" \
     --hf-weight "$ICDAR_W" \
-    --output output/distill_convnext_pico_saliency_mix \
-    --student-size pico \
+    --output output/distill_convnext_femto_saliency_mix \
+    --student-size femto \
     --img-size 384 \
     --batch-size 64 \
     --num-workers 8 \
