@@ -64,8 +64,10 @@ Loss:
 AuxDistill:
   enabled: false
   teacher_ckpt: weights/dinov3/convnext_det_unfreeze.pth
+  teacher_config: configs/det/PP-OCRv5/PP-OCRv5_convnext_det.yml
   align_stages: [2, 3]
-  weight: 5.0
+  feat_weight: 5.0
+  logit_weight: 0.0
 
 Optimizer:
   name: Adam

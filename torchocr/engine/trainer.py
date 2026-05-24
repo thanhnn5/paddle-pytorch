@@ -132,16 +132,18 @@ class Trainer(object):
         """Set up Stage-3 auxiliary distillation if `cfg.AuxDistill.enabled`.
 
         On enable:
-          * Loads a frozen teacher backbone from the configured checkpoint.
-          * Attaches an `AuxDistillLoss` module (the per-stage 1x1 adapters
-            and cosine-similarity loss) onto `self.model` as `aux_distill`,
-            so the optimizer picks up the adapter params automatically.
+          * Loads a frozen teacher from the configured checkpoint. If
+            `cfg.AuxDistill.teacher_config` is set OR `logit_weight > 0`,
+            builds the FULL BaseModel teacher (backbone + neck + head) so
+            we can read its per-pixel text-probability map for logit
+            distillation. Otherwise only the backbone is loaded.
+          * Attaches `AuxDistillLoss` onto `self.model` as `aux_distill`
+            (so optimizer picks up the adapter params automatically).
           * Registers a forward hook on `self.model.backbone` that stashes
-            its stage-output list into `self._student_backbone_feats` per
-            step.
+            its stage-output list into `self._student_backbone_feats`.
 
-        The teacher is kept off `self.model` (managed as `self._aux_teacher`)
-        so it doesn't bloat checkpoints and isn't placed in the optimizer.
+        The teacher is kept off `self.model` (in `self._aux_teacher`) so it
+        doesn't bloat checkpoints and isn't placed in the optimizer.
         """
         self._aux_teacher = None
         self._student_backbone_feats = None
@@ -159,26 +161,45 @@ class Trainer(object):
         if not teacher_ckpt:
             raise ValueError("AuxDistill.enabled=true but AuxDistill.teacher_ckpt is unset")
         align_stages = list(aux_cfg.get('align_stages', [2, 3]))
-        weight = float(aux_cfg.get('weight', 5.0))
+        # Backward compat: `weight` is the feature-distill weight (legacy name).
+        feat_weight = float(aux_cfg.get('feat_weight', aux_cfg.get('weight', 5.0)))
+        logit_weight = float(aux_cfg.get('logit_weight', 0.0))
+        teacher_config = aux_cfg.get('teacher_config')
 
-        teacher = build_teacher(teacher_ckpt, self.device, full_model_config=None)
-        # build_teacher returns TeacherBackboneOnly with .out_channels and
-        # forward(x) -> (features, None). Already eval()/no_grad.
+        # If we want logit distillation, we need the full teacher (head emits
+        # the prob map). teacher_config defaults to the student's config (same
+        # architecture works for the teacher too if it's a ConvNeXt det model
+        # with matching head class — but in practice user should provide the
+        # teacher YAML explicitly because backbone arch differs).
+        need_full_teacher = logit_weight > 0
+        if need_full_teacher and not teacher_config:
+            raise ValueError(
+                "AuxDistill.logit_weight > 0 requires AuxDistill.teacher_config "
+                "(path to teacher BaseModel YAML, e.g. PP-OCRv5_convnext_det.yml)"
+            )
+
+        teacher = build_teacher(teacher_ckpt, self.device,
+                                full_model_config=teacher_config)
+        # Returns TeacherBackboneOnly (forward -> (feats, None)) when
+        # teacher_config is None, else TeacherWithSaliency (forward ->
+        # (feats, prob_map)). Already eval() + requires_grad=False.
         self._aux_teacher = teacher
 
         student_channels = list(self.model.backbone.out_channels)
         teacher_channels = list(teacher.out_channels)
         self.logger.info(
             f"[AuxDistill] enabled: align_stages={align_stages} "
-            f"student_ch={student_channels} teacher_ch={teacher_channels} weight={weight}"
+            f"student_ch={student_channels} teacher_ch={teacher_channels} "
+            f"feat_weight={feat_weight} logit_weight={logit_weight} "
+            f"teacher={'full' if need_full_teacher else 'backbone-only'}"
         )
 
-        # Register as a submodule so adapter params flow into the optimizer.
         self.model.aux_distill = AuxDistillLoss(
             student_channels=student_channels,
             teacher_channels=teacher_channels,
             align_stages=align_stages,
-            weight=weight,
+            feat_weight=feat_weight,
+            logit_weight=logit_weight,
         ).to(self.device)
 
         # Forward hook captures backbone stage outputs each step.
@@ -186,24 +207,37 @@ class Trainer(object):
             self._student_backbone_feats = output
         self._aux_backbone_hook = self.model.backbone.register_forward_hook(_hook)
 
-    def _aux_distill_term(self, images):
-        """Run teacher and return weighted distill loss (scalar tensor).
+    def _aux_distill_term(self, images, preds):
+        """Run teacher + return distill loss dict (or None if disabled).
 
-        Called per training step after the student forward (which populated
-        `self._student_backbone_feats` via the hook). Returns None if aux
-        distill is disabled or the backbone features weren't captured.
+        Called per training step after the student forward, which:
+          1. populated `self._student_backbone_feats` via the backbone hook
+          2. returned `preds` whose `res[:, :1]` is the student's per-pixel
+             text-probability map (used for logit distillation)
+
+        Returns dict with keys 'loss', 'loss_feat', 'loss_logit' (last two
+        present only when their respective weights are > 0).
         """
         if self._aux_teacher is None:
             return None
         student_feats = self._student_backbone_feats
         if student_feats is None:
             return None
+
+        # Pull student's text-probability map for logit distillation. DBHead
+        # and PFHeadLocal both put it as the first channel of `res` (with
+        # `res` being 3-channel concat in training mode for both).
+        student_prob = None
+        if isinstance(preds, dict) and 'res' in preds:
+            res = preds['res']
+            if res is not None and res.dim() == 4:
+                student_prob = res[:, :1]
+
         with torch.no_grad():
-            teacher_feats, _ = self._aux_teacher(images)
-        # `self.model.aux_distill` exists only when enabled; access via
-        # underlying module under DDP wrapping.
+            teacher_feats, teacher_prob = self._aux_teacher(images)
+
         aux_mod = self.model.module.aux_distill if hasattr(self.model, 'module') else self.model.aux_distill
-        return aux_mod.weight * aux_mod(student_feats, teacher_feats)
+        return aux_mod(student_feats, teacher_feats, student_prob, teacher_prob)
 
     def set_random_seed(self, seed):
         torch.manual_seed(seed)  # 为CPU设置随机种子
@@ -276,20 +310,26 @@ class Trainer(object):
                     with torch.cuda.amp.autocast():
                         preds = self.model(batch[0], data=batch[1:])
                         loss = self.loss_class(preds, batch)
-                        aux = self._aux_distill_term(batch[0])
+                        aux = self._aux_distill_term(batch[0], preds)
                     if aux is not None:
-                        loss['loss_distill'] = aux.detach()
-                        loss['loss'] = loss['loss'] + aux
+                        if 'loss_feat' in aux:
+                            loss['loss_feat'] = aux['loss_feat']
+                        if 'loss_logit' in aux:
+                            loss['loss_logit'] = aux['loss_logit']
+                        loss['loss'] = loss['loss'] + aux['loss']
                     self.scaler.scale(loss['loss']).backward()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:
                     preds = self.model(batch[0], data=batch[1:])
                     loss = self.loss_class(preds, batch)
-                    aux = self._aux_distill_term(batch[0])
+                    aux = self._aux_distill_term(batch[0], preds)
                     if aux is not None:
-                        loss['loss_distill'] = aux.detach()
-                        loss['loss'] = loss['loss'] + aux
+                        if 'loss_feat' in aux:
+                            loss['loss_feat'] = aux['loss_feat']
+                        if 'loss_logit' in aux:
+                            loss['loss_logit'] = aux['loss_logit']
+                        loss['loss'] = loss['loss'] + aux['loss']
                     avg_loss = loss['loss']
                     avg_loss.backward()
                     self.optimizer.step()
