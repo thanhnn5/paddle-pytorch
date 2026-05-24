@@ -67,3 +67,39 @@ Checkpoint: `output/PP-OCRv5_convnextv2_femto_sal_mix_balanced_aux_det/phase2_jo
 Mean IoU of matches is unchanged, so the bigger input lifts the
 discrimination boundary, not localization tightness. Small-text recall stays
 the bottleneck — needs an even larger infer side or stronger small-text aug.
+
+## Results — teacher vs student (both @ 1280-max)
+
+Teacher checkpoint: `output/PP-OCRv5_convnext_det_unfreeze/best.pth` (the
+DINOv3-ConvNeXt-tiny detection model used as the Stage-2 distill source and
+the AuxDistill target during femto fine-tune).
+
+| metric                       | femto sal-mix-aux | **convnext-tiny (teacher)** | Δ (teacher − student) |
+|------------------------------|-------------------|------------------------------|------|
+| Total predictions            | 1689              | 1343                         | -346 |
+| **P @ IoU 0.3**              | 0.677             | **0.844**                    | +16.7 |
+| R @ IoU 0.3                  | 0.902             | 0.895                        | -0.7  |
+| **F1 @ IoU 0.3**             | 0.773             | **0.869**                    | +9.6  |
+| P @ IoU 0.5                  | 0.650             | **0.822**                    | +17.2 |
+| F1 @ IoU 0.5                 | 0.743             | **0.846**                    | +10.3 |
+| F1 @ IoU 0.7                 | 0.482             | **0.600**                    | +11.8 |
+| mean IoU of TPs              | 0.732             | 0.746                        | +1.4  |
+| Small-text recall (IoU 0.5)  | 0.765             | 0.756                        | -0.9  |
+| Medium recall                | 0.908             | 0.934                        | +2.6  |
+| Large recall                 | 0.927             | 0.924                        | -0.3  |
+| Images w/ 0 FPs              | 82.7 %            | **93.2 %**                   | +10.5 |
+| Mean #pred − #gt drift       | +0.14             | +0.03                        | -0.11 |
+
+**Read:**
+- **Teacher's precision is dramatically higher** (+17 P, +10 F1). Fewer FPs
+  per image (93 % clean vs 83 %).
+- **Recall is essentially tied** — the student isn't missing more boxes, it
+  just adds spurious extras. AuxDistill@5.0 narrowed but didn't close the gap.
+- **Small-text recall (~0.76) is the bottleneck for both** — a resolution /
+  augmentation problem, not a capacity problem.
+- Mean IoU of TPs is only +1.4 in teacher's favour — localization tightness
+  is comparable.
+- **Distillation headroom: ~+10 F1 at IoU 0.5 still on the table.**
+  Stage-2 feature alignment is already strong (probe mse_ln s3 ≈ 0.131); the
+  next lever is making head/neck convert that into precision parity — try
+  raising AuxDistill weight or co-distilling head logits.
