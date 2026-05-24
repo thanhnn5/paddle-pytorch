@@ -56,11 +56,34 @@ class AttrDict(dict):
         raise AttributeError("object has no attribute '{}'".format(key))
 
 
+_LIST_KEY_RE = __import__('re').compile(r'^([^\[\]]+)\[(\d+)\]$')
+
+
+def _resolve_key(container, key):
+    """Resolve a single key segment against `container`.
+
+    Supports `name[i]` list indexing, e.g. `transforms[2]` selects the
+    element at index 2 of the list under key `transforms`. Returns
+    (child_container, child_key) where child_key is the final key to
+    assign / recurse into.
+    """
+    m = _LIST_KEY_RE.match(key)
+    if m:
+        name, idx = m.group(1), int(m.group(2))
+        if isinstance(container, dict) and name in container:
+            lst = container[name]
+            if isinstance(lst, list) and -len(lst) <= idx < len(lst):
+                return lst, idx
+    return container, key
+
+
 def _merge_dict(config, merge_dct):
-    """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
-    updating only top-level keys, dict_merge recurses down into dicts nested
-    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
-    ``dct``.
+    """ Recursive dict merge with `name[i]` list-index support.
+
+    Inspired by :meth:``dict.update()``, instead of updating only top-level
+    keys, recurses into nested dicts/lists. Supports indexed keys in dotted
+    paths, e.g. `Eval.dataset.transforms[2].DetResizeForTest.limit_side_len`
+    walks into the 3rd element of the transforms list.
 
     Args:
         config: dict onto which the merge is executed
@@ -68,16 +91,49 @@ def _merge_dict(config, merge_dct):
 
     Returns: dct
     """
-    for key, value in merge_dct.items():
-        sub_keys = key.split('.')
-        key = sub_keys[0]
-        if key in config and len(sub_keys) > 1:
-            _merge_dict(config[key], {'.'.join(sub_keys[1:]): value})
-        elif key in config and isinstance(config[key], dict) and isinstance(
-                value, Mapping):
-            _merge_dict(config[key], value)
+    from collections.abc import Mapping
+    for full_key, value in merge_dct.items():
+        sub_keys = full_key.split('.')
+        # Navigate to the parent container of the final key
+        cur = config
+        for seg in sub_keys[:-1]:
+            parent, child_key = _resolve_key(cur, seg)
+            if isinstance(parent, list):
+                # parent[child_key] should exist (we validated index range)
+                # If the value at that index is None, replace with {} so we
+                # can attach nested keys (matches the pre-fix behaviour for
+                # `Foo: None` in YAML — kwargs were meant to land inside).
+                if parent[child_key] is None:
+                    parent[child_key] = {}
+                cur = parent[child_key]
+            else:
+                # dict-style key — may need to auto-create
+                if child_key not in cur:
+                    cur[child_key] = {}
+                elif cur[child_key] is None:
+                    cur[child_key] = {}
+                cur = cur[child_key]
+
+        final_seg = sub_keys[-1]
+        parent, child_key = _resolve_key(cur, final_seg)
+
+        if isinstance(parent, list):
+            # Direct list-index assignment
+            existing = parent[child_key]
+            if isinstance(existing, dict) and isinstance(value, Mapping):
+                _merge_dict(existing, value)
+            elif existing is None and isinstance(value, Mapping):
+                parent[child_key] = dict(value)
+            else:
+                parent[child_key] = value
         else:
-            config[key] = value
+            existing = parent.get(child_key) if isinstance(parent, dict) else None
+            if isinstance(existing, dict) and isinstance(value, Mapping):
+                _merge_dict(existing, value)
+            elif existing is None and isinstance(value, Mapping):
+                parent[child_key] = dict(value)
+            else:
+                parent[child_key] = value
     return config
 
 
