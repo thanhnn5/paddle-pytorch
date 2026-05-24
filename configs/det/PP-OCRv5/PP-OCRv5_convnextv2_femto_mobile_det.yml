@@ -53,6 +53,15 @@ Loss:
   beta: 10
   ohem_ratio: 3
 
+# Stage-3 auxiliary distillation. Disabled by default; enable in the
+# Phase-2 invocation of scripts/finetune_femto_mobile.sh via
+# `-o AuxDistill.enabled=true ...`. See docs/stage3_auxiliary_distill.md.
+AuxDistill:
+  enabled: false
+  teacher_ckpt: weights/dinov3/convnext_det_unfreeze.pth
+  align_stages: [2, 3]            # backbone stage indices (strides 16, 32)
+  weight: 5.0
+
 Optimizer:
   name: Adam
   betas: [0.9, 0.999]

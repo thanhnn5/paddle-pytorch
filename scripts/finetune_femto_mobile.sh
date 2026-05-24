@@ -113,6 +113,9 @@ python3 tools/train.py \
     Optimizer.backbone_lr_mult=0.1 \
     Optimizer.neck_lr_mult=1.0 \
     Optimizer.head_lr_mult=1.0 \
+    AuxDistill.enabled=true \
+    AuxDistill.teacher_ckpt=weights/dinov3/convnext_det_unfreeze.pth \
+    AuxDistill.weight=5.0 \
     Train.loader.batch_size_per_card=32 \
     Train.dataset.data_dir=data/det_v4/ \
     Train.dataset.label_file_list='[./data/det_v4/train.txt]' \
