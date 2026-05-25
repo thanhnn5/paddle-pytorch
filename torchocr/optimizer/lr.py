@@ -126,19 +126,20 @@ class FlatCosineLR(object):
       2. Flat hold     (warmup_iter .. flat_iter):
                        constant at peak_lr.
                        multiplier(step) = 1.0
-      3. Cosine decay  (flat_iter .. total_iter - no_aug_iter):
+      3. Cosine decay  (flat_iter .. total_iter - cooldown_iter):
                        half-cosine from peak_lr to peak_lr * lr_gamma.
                        multiplier(step) = lr_gamma + (1 - lr_gamma) * cos_decay
-      4. Min-flat tail (last no_aug_iter steps):
+      4. Min-flat tail (last cooldown_iter steps):
                        constant at peak_lr * lr_gamma.
                        multiplier(step) = lr_gamma
 
     Rationale per the DEIM paper: DETR-style detectors converge faster when
     given a long flat plateau at peak LR before cosine decay starts (most
-    optimization happens during this phase). The min-flat tail aligns with
-    augmentation-off epochs in DEIM (mosaic/mixup stop) — we keep the option
-    but default `no_aug_epoch=0` since our pipeline doesn't switch augmentation
-    schedules.
+    optimization happens during this phase). The cooldown tail at min LR is
+    optional — useful for end-of-training stability (final epochs converge at
+    a steady low LR) or to align with an augmentation-off finetune phase if
+    you have one. Default `cooldown_epoch=0` means the schedule reduces to
+    `warmup -> flat -> cosine-to-min` with the last step landing at `lr_gamma`.
 
     Args:
         epochs: total number of training epochs.
@@ -146,8 +147,9 @@ class FlatCosineLR(object):
         warmup_epoch: epochs of quadratic warmup (default 2).
         flat_epoch: epoch index at which cosine decay begins (default = half
             of `epochs`). Must satisfy `warmup_epoch <= flat_epoch <= epochs`.
-        no_aug_epoch: final epochs to hold at min LR (default 0, i.e. cosine
-            runs all the way to the last iteration).
+        cooldown_epoch: final epochs to hold at min LR (default 0). Setting
+            > 0 reserves the last N epochs as a steady-min-LR cooldown
+            instead of letting cosine decay run all the way to the end.
         lr_gamma: minimum LR as a fraction of peak (default 0.5 = decay to
             50% of peak, matching RT-DETRv4). Use 0.05-0.1 for a deeper
             decay tail.
@@ -159,7 +161,7 @@ class FlatCosineLR(object):
                  step_each_epoch,
                  warmup_epoch=2,
                  flat_epoch=None,
-                 no_aug_epoch=0,
+                 cooldown_epoch=0,
                  lr_gamma=0.5,
                  last_epoch=-1,
                  **kwargs):
@@ -172,9 +174,9 @@ class FlatCosineLR(object):
                 f"FlatCosineLR requires 0 <= warmup_epoch ({warmup_epoch}) "
                 f"<= flat_epoch ({flat_epoch}) <= epochs ({epochs})"
             )
-        if no_aug_epoch < 0 or no_aug_epoch >= epochs - flat_epoch:
+        if cooldown_epoch < 0 or cooldown_epoch >= epochs - flat_epoch:
             raise ValueError(
-                f"no_aug_epoch ({no_aug_epoch}) must be in [0, epochs-flat_epoch={epochs-flat_epoch})"
+                f"cooldown_epoch ({cooldown_epoch}) must be in [0, epochs-flat_epoch={epochs-flat_epoch})"
             )
         if not (0.0 <= lr_gamma < 1.0):
             raise ValueError(f"lr_gamma must be in [0, 1), got {lr_gamma}")
@@ -182,7 +184,7 @@ class FlatCosineLR(object):
         self.total_iter = epochs * step_each_epoch
         self.warmup_iter = warmup_epoch * step_each_epoch
         self.flat_iter = flat_epoch * step_each_epoch
-        self.no_aug_iter = no_aug_epoch * step_each_epoch
+        self.cooldown_iter = cooldown_epoch * step_each_epoch
         self.lr_gamma = float(lr_gamma)
         self.last_epoch = last_epoch
 
@@ -199,11 +201,11 @@ class FlatCosineLR(object):
             return 1.0
 
         # Phase 4: min-flat tail
-        if self.no_aug_iter > 0 and current_step >= self.total_iter - self.no_aug_iter:
+        if self.cooldown_iter > 0 and current_step >= self.total_iter - self.cooldown_iter:
             return self.lr_gamma
 
         # Phase 3: half-cosine decay from peak -> peak * lr_gamma
-        decay_span = max(1, self.total_iter - self.flat_iter - self.no_aug_iter)
+        decay_span = max(1, self.total_iter - self.flat_iter - self.cooldown_iter)
         progress = (current_step - self.flat_iter) / decay_span
         cos_factor = 0.5 * (1.0 + math.cos(math.pi * progress))   # 1 -> 0
         return self.lr_gamma + (1.0 - self.lr_gamma) * cos_factor
