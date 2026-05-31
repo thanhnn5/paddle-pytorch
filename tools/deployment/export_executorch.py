@@ -15,6 +15,9 @@ from torchocr.utils.ckpt import load_ckpt
 from torchocr.utils.logging import get_logger
 from torchocr import Config
 from tools.utility import update_rec_head_out_channels, ArgsParser
+from tools.infer.pytorch.infer_rec import build_rec_process
+from tools.infer.pytorch.infer_det import build_det_process
+from tools.infer.pytorch.infer_cls import build_cls_process
 
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
@@ -25,11 +28,18 @@ from executorch.devtools.backend_debug import get_delegation_info
 from tabulate import tabulate
 
 
+# CPU goes through XNNPACK; Apple GPU/ANE through CoreML. "mps"/"metal" lowers to
+# the Metal Performance Shaders delegate — note the prebuilt `executorch` pip
+# wheel does NOT bundle the MPS runtime (only CoreML + XNNPACK), so an mps .pte
+# exports fine but only runs against an executorch built with -DEXECUTORCH_BUILD_MPS=ON.
+# On Apple Silicon prefer CoreML for GPU acceleration (see ExecuTorch backend docs).
 def _make_partitioner(backend):
     if backend == "xnnpack":
         return [XnnpackPartitioner()]
     if backend == "coreml":
         return [CoreMLPartitioner(lower_full_graph=True)]
+    if backend in ("mps", "metal"):
+        raise NotImplementedError(f"MPS/Metal is deprecated. Use coreml instead.")
     if backend == "vulkan":
         return [VulkanPartitioner()]
     raise NotImplementedError(f"Unknown backend: {backend}")
@@ -40,6 +50,18 @@ def export_single_model(model, _cfg, export_dir, export_config, logger, backend)
         if hasattr(layer, "rep") and not getattr(layer, "is_repped"):
             layer.rep()
     os.makedirs(export_dir, exist_ok=True)
+
+    # Save the pre/post-processing config next to the .pte so the inference
+    # runner (tools/infer/executorch/predict_det.py) is config-driven, exactly
+    # like the ONNX/MNN exports.
+    export_cfg = {"PostProcess": _cfg["PostProcess"]}
+    if _cfg["Architecture"]["model_type"] == "rec":
+        export_cfg["Transforms"] = build_rec_process(_cfg)
+    elif _cfg["Architecture"]["model_type"] == "det":
+        export_cfg["Transforms"] = build_det_process(_cfg)
+    elif _cfg["Architecture"]["model_type"] == "cls":
+        export_cfg["Transforms"] = build_cls_process(_cfg)
+    cfg.save(os.path.join(export_dir, "config.yaml"), export_cfg)
 
     dummy_input = torch.randn(*export_config["export_shape"], device="cpu")
     save_path = os.path.join(export_dir, f"model_{backend}.pte")
