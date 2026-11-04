@@ -16,7 +16,6 @@ import os
 
 import torch.nn as nn
 
-from transformers import AutoModel, AutoConfig
 
 
 class ConvNeXtDetBackbone(nn.Module):
@@ -44,6 +43,9 @@ class ConvNeXtDetBackbone(nn.Module):
 
         model_name = model_name or self._default_model
         token = hf_token or os.environ.get("HF_TOKEN")
+        # Lazy import: only ConvNeXt models need transformers, so a broken
+        # transformers install doesn't break building every other det model.
+        from transformers import AutoModel, AutoConfig
 
         if weights_path and os.path.isdir(weights_path):
             # Load from local directory (already downloaded)

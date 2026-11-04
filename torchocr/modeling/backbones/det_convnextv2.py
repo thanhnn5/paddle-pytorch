@@ -7,7 +7,6 @@ so it drops into the same LKPAN/DBHead pipeline.
 import os
 
 import torch.nn as nn
-from transformers import AutoModel, AutoConfig
 
 
 class ConvNeXtV2Backbone(nn.Module):
@@ -43,6 +42,9 @@ class ConvNeXtV2Backbone(nn.Module):
             model_name = self._size_to_model[size]
 
         token = hf_token or os.environ.get("HF_TOKEN")
+        # Lazy import: only ConvNeXt models need transformers, so a broken
+        # transformers install doesn't break building every other det model.
+        from transformers import AutoModel, AutoConfig
 
         if weights_path and os.path.isdir(weights_path):
             self._backbone = AutoModel.from_pretrained(weights_path)
