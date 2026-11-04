@@ -49,12 +49,24 @@ class TextDetectorMNN:
         # an ndarray, not bytes) and capture img_mode separately so we can
         # BGR→RGB the input before NormalizeImage runs.
         self.img_mode = (cfg.get('Transforms', [{}])[0].get('DecodeImage') or {}).get('img_mode', 'RGB')
-        resize = {'DetResizeForTest': {'limit_side_len': args.det_limit_side_len,
-                                       'limit_type':     args.det_limit_type}}
-        pre_process_list = [
-            resize if 'DetResizeForTest' in op else op
-            for op in cfg.get('Transforms', []) if 'DecodeImage' not in op
-        ]
+        # Fixed-shape models (exported without dynamic H/W) need an input of
+        # exactly `det_input_shape`. We letterbox: resize keeping the aspect
+        # ratio to fit inside it, zero-pad bottom/right after normalization,
+        # then crop the padding off the prob map before post-processing.
+        self.input_shape = getattr(args, 'det_input_shape', None)
+        if self.input_shape:
+            self.input_shape = tuple(int(v) for v in str(self.input_shape).split(','))
+            pre_process_list = [
+                op for op in cfg.get('Transforms', [])
+                if 'DecodeImage' not in op and 'DetResizeForTest' not in op
+            ]
+        else:
+            resize = {'DetResizeForTest': {'limit_side_len': args.det_limit_side_len,
+                                           'limit_type':     args.det_limit_type}}
+            pre_process_list = [
+                resize if 'DetResizeForTest' in op else op
+                for op in cfg.get('Transforms', []) if 'DecodeImage' not in op
+            ]
         self.preprocess_op = create_operators(pre_process_list)
 
         post_overrides = {k: v for k, v in {
@@ -113,18 +125,32 @@ class TextDetectorMNN:
         # the right channels.
         if self.img_mode == 'RGB':
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        data = {'image': img}
         st = time.time()
+        if self.input_shape:
+            in_h, in_w = self.input_shape
+            src_h, src_w = img.shape[:2]
+            scale = min(in_h / src_h, in_w / src_w)
+            rh, rw = max(1, round(src_h * scale)), max(1, round(src_w * scale))
+            img = cv2.resize(img, (rw, rh))
+            data = {'image': img, 'shape': np.array([src_h, src_w, rh / src_h, rw / src_w])}
+        else:
+            data = {'image': img}
 
         data = transform(data, self.preprocess_op)
         img, shape_list = data
         if img is None:
             return None, 0
+        if self.input_shape:
+            padded = np.zeros((img.shape[0], in_h, in_w), dtype=np.float32)
+            padded[:, :rh, :rw] = img
+            img = padded
         img = np.expand_dims(img, axis=0).copy()
         shape_list = np.expand_dims(shape_list, axis=0)
 
         preds = self.engine.run(img)
         prob_map = preds[0]
+        if self.input_shape:
+            prob_map = prob_map[..., :rh, :rw]
 
         post_result = self.postprocess_op({'res': prob_map}, [-1, shape_list])
         dt_boxes = post_result[0]['points']
@@ -146,6 +172,9 @@ def parse_args():
     p.add_argument('--det_box_type', type=str, default='quad')
     p.add_argument('--det_limit_side_len', type=float, default=1280)
     p.add_argument('--det_limit_type', type=str, default='max')
+    p.add_argument('--det_input_shape', type=str, default=None,
+                   help="'H,W' for fixed-shape models (letterbox + pad); "
+                        'overrides det_limit_side_len/det_limit_type')
     # DBPostProcess overrides — leave at None to keep the values baked into
     # the exported config.yaml (matches the ONNX path's behaviour).
     p.add_argument('--det_db_thresh',       type=float, default=None)

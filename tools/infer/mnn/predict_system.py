@@ -110,6 +110,8 @@ def parse_args():
     p.add_argument('--det_box_type', type=str, default='quad')
     p.add_argument('--det_limit_side_len', type=float, default=1280)
     p.add_argument('--det_limit_type', type=str, default='max')
+    p.add_argument('--det_input_shape', type=str, default=None,
+                   help="'H,W' for fixed-shape det models (letterbox + pad)")
     p.add_argument('--det_db_thresh',       type=float, default=None)
     p.add_argument('--det_db_box_thresh',   type=float, default=None)
     p.add_argument('--det_db_unclip_ratio', type=float, default=None)

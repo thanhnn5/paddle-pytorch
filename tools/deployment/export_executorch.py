@@ -35,20 +35,25 @@ import coremltools
 # wheel does NOT bundle the MPS runtime (only CoreML + XNNPACK), so an mps .pte
 # exports fine but only runs against an executorch built with -DEXECUTORCH_BUILD_MPS=ON.
 # On Apple Silicon prefer CoreML for GPU acceleration (see ExecuTorch backend docs).
-def _make_partitioner(backend, ios_target=17):
+def _make_partitioner(backend, ios_target=17, precision="fp16"):
     if backend == "xnnpack":
         return [XnnpackPartitioner()]
     if backend == "coreml":
         # Force the CoreML deployment target. compile_specs must be a list of
         # CompileSpec (not a coremltools.target enum) — generate_compile_specs
-        # builds them, defaulting to compute_unit=ALL, compute_precision=fp16.
+        # builds them (compute_unit=ALL). fp16 can run on the Neural Engine but
+        # rounds activations: PP-OCRv5 mobile det loses 7/94 boxes vs Paddle in
+        # fp16 and none in fp32 (see docs/paddle_det_port_parity.md).
         target = getattr(coremltools.target, f"iOS{ios_target}", None)
         if target is None:
             raise ValueError(f"coremltools has no iOS{ios_target} deployment target")
+        compute_precision = {"fp16": coremltools.precision.FLOAT16,
+                             "fp32": coremltools.precision.FLOAT32}[precision]
         return [CoreMLPartitioner(
             lower_full_graph=True,
             compile_specs=CoreMLBackend.generate_compile_specs(
                 minimum_deployment_target=target,
+                compute_precision=compute_precision,
             ),
         )]
     if backend in ("mps", "metal"):
@@ -58,7 +63,8 @@ def _make_partitioner(backend, ios_target=17):
     raise NotImplementedError(f"Unknown backend: {backend}")
 
 
-def export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target=17):
+def export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target=17,
+                        precision="fp16"):
     for layer in model.modules():
         if hasattr(layer, "rep") and not getattr(layer, "is_repped"):
             layer.rep()
@@ -81,7 +87,7 @@ def export_single_model(model, _cfg, export_dir, export_config, logger, backend,
 
     et_program = to_edge_transform_and_lower(
         torch.export.export(model, (dummy_input,), dynamic_shapes=None),
-        partitioner=_make_partitioner(backend, ios_target),
+        partitioner=_make_partitioner(backend, ios_target, precision),
     )
 
     with open(save_path, "wb") as f:
@@ -95,7 +101,7 @@ def export_single_model(model, _cfg, export_dir, export_config, logger, backend,
     logger.info(f"finish export model to {save_path}")
 
 
-def main(cfg, backend, ios_target=17):
+def main(cfg, backend, ios_target=17, precision="fp16"):
     _cfg = cfg.cfg
     logger = get_logger()
     global_config = _cfg["Global"]
@@ -118,10 +124,10 @@ def main(cfg, backend, ios_target=17):
             sub_dir = os.path.join(export_dir, model_name)
             export_single_model(
                 model.model_list[model_name], _cfg, sub_dir, export_config, logger,
-                backend, ios_target
+                backend, ios_target, precision
             )
     else:
-        export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target)
+        export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target, precision)
 
 
 def parse_args():
@@ -130,6 +136,9 @@ def parse_args():
                         help="executorch backend: coreml | xnnpack | vulkan")
     parser.add_argument("--ios", type=int, default=17,
                         help="minimum CoreML iOS deployment target (coreml backend only)")
+    parser.add_argument("--precision", choices=["fp16", "fp32"], default="fp16",
+                        help="CoreML compute precision (coreml backend only). fp16 is "
+                             "faster / ANE-eligible; fp32 matches the torch model exactly")
     return parser.parse_args()
 
 
@@ -139,4 +148,4 @@ if __name__ == "__main__":
     FLAGS = vars(FLAGS)
     opt = FLAGS.pop("opt")
     cfg.merge_dict(opt)
-    main(cfg, FLAGS["backend"], FLAGS["ios"])
+    main(cfg, FLAGS["backend"], FLAGS["ios"], FLAGS["precision"])
