@@ -35,17 +35,20 @@ import coremltools
 # wheel does NOT bundle the MPS runtime (only CoreML + XNNPACK), so an mps .pte
 # exports fine but only runs against an executorch built with -DEXECUTORCH_BUILD_MPS=ON.
 # On Apple Silicon prefer CoreML for GPU acceleration (see ExecuTorch backend docs).
-def _make_partitioner(backend):
+def _make_partitioner(backend, ios_target=17):
     if backend == "xnnpack":
         return [XnnpackPartitioner()]
     if backend == "coreml":
         # Force the CoreML deployment target. compile_specs must be a list of
         # CompileSpec (not a coremltools.target enum) — generate_compile_specs
         # builds them, defaulting to compute_unit=ALL, compute_precision=fp16.
+        target = getattr(coremltools.target, f"iOS{ios_target}", None)
+        if target is None:
+            raise ValueError(f"coremltools has no iOS{ios_target} deployment target")
         return [CoreMLPartitioner(
             lower_full_graph=True,
             compile_specs=CoreMLBackend.generate_compile_specs(
-                minimum_deployment_target=coremltools.target.iOS16,
+                minimum_deployment_target=target,
             ),
         )]
     if backend in ("mps", "metal"):
@@ -55,7 +58,7 @@ def _make_partitioner(backend):
     raise NotImplementedError(f"Unknown backend: {backend}")
 
 
-def export_single_model(model, _cfg, export_dir, export_config, logger, backend):
+def export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target=17):
     for layer in model.modules():
         if hasattr(layer, "rep") and not getattr(layer, "is_repped"):
             layer.rep()
@@ -78,7 +81,7 @@ def export_single_model(model, _cfg, export_dir, export_config, logger, backend)
 
     et_program = to_edge_transform_and_lower(
         torch.export.export(model, (dummy_input,), dynamic_shapes=None),
-        partitioner=_make_partitioner(backend),
+        partitioner=_make_partitioner(backend, ios_target),
     )
 
     with open(save_path, "wb") as f:
@@ -92,7 +95,7 @@ def export_single_model(model, _cfg, export_dir, export_config, logger, backend)
     logger.info(f"finish export model to {save_path}")
 
 
-def main(cfg, backend):
+def main(cfg, backend, ios_target=17):
     _cfg = cfg.cfg
     logger = get_logger()
     global_config = _cfg["Global"]
@@ -114,16 +117,19 @@ def main(cfg, backend):
         for model_name in model.model_list:
             sub_dir = os.path.join(export_dir, model_name)
             export_single_model(
-                model.model_list[model_name], _cfg, sub_dir, export_config, logger, backend
+                model.model_list[model_name], _cfg, sub_dir, export_config, logger,
+                backend, ios_target
             )
     else:
-        export_single_model(model, _cfg, export_dir, export_config, logger, backend)
+        export_single_model(model, _cfg, export_dir, export_config, logger, backend, ios_target)
 
 
 def parse_args():
     parser = ArgsParser()
     parser.add_argument("--backend", type=str, default="coreml",
                         help="executorch backend: coreml | xnnpack | vulkan")
+    parser.add_argument("--ios", type=int, default=17,
+                        help="minimum CoreML iOS deployment target (coreml backend only)")
     return parser.parse_args()
 
 
@@ -133,4 +139,4 @@ if __name__ == "__main__":
     FLAGS = vars(FLAGS)
     opt = FLAGS.pop("opt")
     cfg.merge_dict(opt)
-    main(cfg, FLAGS["backend"])
+    main(cfg, FLAGS["backend"], FLAGS["ios"])
