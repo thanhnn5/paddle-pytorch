@@ -10,6 +10,27 @@ class GELU(nn.Module):
     def forward(self, x):
         return torch.nn.functional.gelu(x)
 
+class HardSigmoid(nn.Module):
+    """``clamp(slope * x + offset, 0, 1)``.
+
+    torch's ``nn.Hardsigmoid`` is fixed at slope 1/6. Paddle's
+    ``F.hardsigmoid`` defaults to slope 0.1666667 too, but PaddleOCR's det
+    ``SEModule`` (MobileNetV3 backbone, RSEFPN / RepLKFPN necks) calls it with
+    ``slope=0.2, offset=0.5``; weights converted from Paddle need that slope.
+    """
+
+    def __init__(self, slope=0.2, offset=0.5):
+        super(HardSigmoid, self).__init__()
+        self.slope = slope
+        self.offset = offset
+
+    def forward(self, x):
+        return torch.clamp(x * self.slope + self.offset, 0.0, 1.0)
+
+    def extra_repr(self):
+        return f"slope={self.slope}, offset={self.offset}"
+
+
 class Swish(nn.Module):
     def __init__(self, inplace=True):
         super(Swish, self).__init__()

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torchocr.modeling.common import Activation
+from torchocr.modeling.common import Activation, HardSigmoid
 
 def make_divisible(v, divisor=8, min_value=None):
     if min_value is None:
@@ -46,7 +46,13 @@ class ConvBNLayer(nn.Module):
 
 
 class SEModule(nn.Module):
-    def __init__(self, in_channels, reduction=4, name=""):
+    def __init__(self, in_channels, reduction=4, name="", hardsigmoid_slope=None):
+        """``hardsigmoid_slope``: None keeps torch's ``nn.Hardsigmoid`` (slope
+        1/6), which is what models trained in torchocr learned with. Set 0.2 for
+        weights converted from PaddleOCR, whose SEModule uses
+        ``hardsigmoid(slope=0.2, offset=0.5)``; with 1/6 those models drift
+        (PP-OCRv5 mobile det: max prob diff ~1.0, 17/94 boxes changed).
+        """
         super(SEModule, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv1 = nn.Conv2d(
@@ -64,7 +70,10 @@ class SEModule(nn.Module):
             stride=1,
             padding=0,
             bias=True)
-        self.hard_sigmoid = Activation(act_type='hard_sigmoid', inplace=True)
+        if hardsigmoid_slope is None:
+            self.hard_sigmoid = Activation(act_type='hard_sigmoid', inplace=True)
+        else:
+            self.hard_sigmoid = HardSigmoid(slope=hardsigmoid_slope, offset=0.5)
 
     def forward(self, inputs):
         outputs = self.avg_pool(inputs)

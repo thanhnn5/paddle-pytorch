@@ -158,7 +158,7 @@ class DBFPN(nn.Module):
 
 
 class RSELayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, shortcut=True):
+    def __init__(self, in_channels, out_channels, kernel_size, shortcut=True, hardsigmoid_slope=None):
         super(RSELayer, self).__init__()
         self.out_channels = out_channels
         self.in_conv = nn.Conv2d(
@@ -167,7 +167,7 @@ class RSELayer(nn.Module):
             kernel_size=kernel_size,
             padding=int(kernel_size // 2),
             bias=False)
-        self.se_block = SEModule(self.out_channels)
+        self.se_block = SEModule(self.out_channels, hardsigmoid_slope=hardsigmoid_slope)
         self.shortcut = shortcut
 
     def forward(self, ins):
@@ -180,7 +180,10 @@ class RSELayer(nn.Module):
 
 
 class RSEFPN(nn.Module):
-    def __init__(self, in_channels, out_channels, shortcut=True, **kwargs):
+    def __init__(self, in_channels, out_channels, shortcut=True, hardsigmoid_slope=None, **kwargs):
+        """``hardsigmoid_slope``: SE gate slope, see ``SEModule``. Leave None
+        (torch's 1/6) for models trained in torchocr; set 0.2 to match
+        PaddleOCR (required for weights converted from Paddle)."""
         super(RSEFPN, self).__init__()
         self.out_channels = out_channels
         self.ins_conv = nn.ModuleList()
@@ -192,13 +195,15 @@ class RSEFPN(nn.Module):
                     in_channels[i],
                     out_channels,
                     kernel_size=1,
-                    shortcut=shortcut))
+                    shortcut=shortcut,
+                    hardsigmoid_slope=hardsigmoid_slope))
             self.inp_conv.append(
                 RSELayer(
                     out_channels,
                     out_channels // 4,
                     kernel_size=3,
-                    shortcut=shortcut))
+                    shortcut=shortcut,
+                    hardsigmoid_slope=hardsigmoid_slope))
 
     def forward(self, x):
         c2, c3, c4, c5 = x

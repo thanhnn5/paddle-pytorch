@@ -35,6 +35,9 @@ Architecture:
     name: RSEFPN
     out_channels: 96
     shortcut: True
+    # PaddleOCR's SE gate is hardsigmoid(slope=0.2); torch's default is 1/6.
+    # 0.2 is required for weights converted from Paddle (e.g. mob_det_2.pth).
+    hardsigmoid_slope: 0.2
   Head:
     name: DBHead
     k: 50
