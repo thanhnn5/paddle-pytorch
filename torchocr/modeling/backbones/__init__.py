@@ -11,10 +11,11 @@ def build_backbone(config, model_type):
         from .det_dinov3 import DINOv3DetBackbone
         from .det_convnext import ConvNeXtDetBackbone
         from .det_convnextv2 import ConvNeXtV2Backbone
+        from .det_pplcnetv4 import PPLCNetV4
         support_dict = [
             'MobileNetV3', 'ResNet_vd', 'PPLCNetV3', 'PPHGNet_small',
             'PPHGNetV2_B4', 'DINOv3DetBackbone', 'ConvNeXtDetBackbone',
-            'ConvNeXtV2Backbone',
+            'ConvNeXtV2Backbone', 'PPLCNetV4',
         ]
     elif model_type == "rec" or model_type == "cls":
         from .rec_mobilenet_v3 import MobileNetV3

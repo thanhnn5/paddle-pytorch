@@ -127,3 +127,54 @@ class BCELoss(nn.Module):
     def forward(self, input, label, mask=None, weight=None, name=None):
         loss = F.binary_cross_entropy(input, label, reduction=self.reduction)
         return loss
+
+
+class MaskedFocalLoss(nn.Module):
+    """Binary focal loss averaged over valid (mask=1) pixels.
+
+    Port of PaddleOCR ``ppocr/losses/det_basic_loss.py::MaskedFocalLoss``
+    (PP-OCRv6). ``pred`` is a post-sigmoid probability map (DBHead output), so
+    it is clamped and inverted back to a logit before the stable
+    BCE-with-logits form, mirroring Paddle's ``F.sigmoid_focal_loss``:
+
+        loss = BCEWithLogits(logit, gt) * alpha_t * (1 - p_t) ** gamma
+    """
+
+    def __init__(self, alpha=0.25, gamma=2.0, eps=1e-6):
+        super(MaskedFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.eps = eps
+
+    def forward(self, pred, gt, mask):
+        pred = torch.clamp(pred, self.eps, 1.0 - self.eps)
+        logit = torch.log(pred / (1.0 - pred))
+
+        ce = F.binary_cross_entropy_with_logits(logit, gt, reduction='none')
+        p = torch.sigmoid(logit)
+        p_t = p * gt + (1 - p) * (1 - gt)
+        alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
+        loss = alpha_t * ce * torch.pow(1 - p_t, self.gamma)
+
+        return (loss * mask).sum() / (mask.sum() + self.eps)
+
+
+class DiceFocalLoss(nn.Module):
+    """DiceLoss + MaskedFocalLoss (PP-OCRv6 shrink-map loss).
+
+    Drop-in replacement for BalanceLoss: same ``forward(pred, gt, mask)``
+    signature, returns a scalar.
+    """
+
+    def __init__(self, dice_weight=1.0, focal_weight=1.0, focal_alpha=0.75,
+                 focal_gamma=2.0, eps=1e-6):
+        super(DiceFocalLoss, self).__init__()
+        self.dice_weight = dice_weight
+        self.focal_weight = focal_weight
+        self.dice_loss = DiceLoss(eps=eps)
+        self.focal_loss = MaskedFocalLoss(alpha=focal_alpha, gamma=focal_gamma, eps=eps)
+
+    def forward(self, pred, gt, mask=None):
+        loss_dice = self.dice_loss(pred, gt, mask)
+        loss_focal = self.focal_loss(pred, gt, mask)
+        return self.dice_weight * loss_dice + self.focal_weight * loss_focal

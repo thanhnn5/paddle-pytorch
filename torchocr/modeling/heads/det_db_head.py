@@ -6,8 +6,10 @@ from torchocr.modeling.backbones.det_mobilenet_v3 import ConvBNLayer
 
 
 class Head(nn.Module):
-    def __init__(self, in_channels, kernel_list=[3, 2, 2], **kwargs):
+    def __init__(self, in_channels, kernel_list=[3, 2, 2], fix_nan=False, **kwargs):
         super(Head, self).__init__()
+        # PP-OCRv6: zero out NaNs after each BN during training (Paddle parity).
+        self.fix_nan = fix_nan
 
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
@@ -33,9 +35,13 @@ class Head(nn.Module):
         x = self.conv1(x)
         x = self.conv_bn1(x)
         x = F.relu(x)
+        if self.fix_nan and self.training:
+            x = torch.nan_to_num(x, nan=0.0, posinf=float('inf'), neginf=float('-inf'))
         x = self.conv2(x)
         x = self.conv_bn2(x)
         x = F.relu(x)
+        if self.fix_nan and self.training:
+            x = torch.nan_to_num(x, nan=0.0, posinf=float('inf'), neginf=float('-inf'))
         if return_f is True:
             f = x
         x = self.conv3(x)
@@ -53,16 +59,31 @@ class DBHead(nn.Module):
         params(dict): super parameters for build DB network
     """
 
-    def __init__(self, in_channels, k=50, **kwargs):
+    # PP-OCRv6: neck lateral maps -> upsample factor to reach 1/4 resolution.
+    _AUX_UPSAMPLE = {'p4': 4, 'p3': 2, 'p2': 1}
+
+    def __init__(self, in_channels, k=50, aux_in_channels=0, **kwargs):
         super(DBHead, self).__init__()
         self.k = k
         self.binarize = Head(in_channels, **kwargs)
         self.thresh = Head(in_channels, **kwargs)
+        # PP-OCRv6 auxiliary deep-supervision heads (train only; ignored at eval).
+        self.aux_in_channels = aux_in_channels
+        if aux_in_channels > 0:
+            for level in self._AUX_UPSAMPLE:
+                setattr(self, f'aux_binarize_{level}', Head(aux_in_channels, **kwargs))
+                setattr(self, f'aux_thresh_{level}', Head(aux_in_channels, **kwargs))
 
     def step_function(self, x, y):
         return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
 
     def forward(self, x, data=None):
+        # RepLKFPN returns a dict in train mode (fused map + aux lateral maps).
+        aux_feats = {}
+        if isinstance(x, dict):
+            aux_feats = {k[4:]: v for k, v in x.items() if k.startswith('aux_')}
+            x = x['fuse']
+
         shrink_maps = self.binarize(x)
         if not self.training:
             return {'res': shrink_maps}
@@ -70,7 +91,17 @@ class DBHead(nn.Module):
         threshold_maps = self.thresh(x)
         binary_maps = self.step_function(shrink_maps, threshold_maps)
         y = torch.cat([shrink_maps, threshold_maps, binary_maps], dim=1)
-        return {'res': y}
+        out = {'res': y}
+        if self.aux_in_channels > 0:
+            for level, feat in aux_feats.items():
+                scale = self._AUX_UPSAMPLE[level]
+                if scale > 1:
+                    feat = F.interpolate(feat, scale_factor=scale, mode='bilinear', align_corners=False)
+                a_shrink = getattr(self, f'aux_binarize_{level}')(feat)
+                a_thresh = getattr(self, f'aux_thresh_{level}')(feat)
+                out[f'aux_maps_{level}'] = torch.cat(
+                    [a_shrink, a_thresh, self.step_function(a_shrink, a_thresh)], dim=1)
+        return out
 
 
 class LocalModule(nn.Module):

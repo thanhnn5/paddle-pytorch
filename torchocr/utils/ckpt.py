@@ -8,13 +8,17 @@ import torch
 from torchocr.utils.logging import get_logger
 
 
-def save_ckpt(model, cfg, optimizer, lr_scheduler, epoch, global_step, metrics, is_best=False, logger=None):
+def save_ckpt(model, cfg, optimizer, lr_scheduler, epoch, global_step, metrics, is_best=False, logger=None,
+              ema=None, train_state=None):
     """
     Saving checkpoints
 
     :param epoch: current epoch number
     :param log: logging information of the epoch
     :param save_best: if True, rename the saved checkpoint to 'model_best.pth.tar'
+    :param ema: ModelEMA.state_dict_for_save(); when given, `model` is expected to
+        currently hold the EMA weights (saved as 'state_dict', so eval/export/
+        finetune use them) and `train_state` the raw training weights (resume).
     """
     if logger is None:
         logger = get_logger()
@@ -32,6 +36,8 @@ def save_ckpt(model, cfg, optimizer, lr_scheduler, epoch, global_step, metrics, 
         'config': cfg,
         'metrics': metrics
     }
+    if ema is not None:
+        state['ema'] = dict(ema, train_state=train_state)
     torch.save(state, save_path)
     logger.info(f'save ckpt to {save_path}')
 
@@ -64,6 +70,8 @@ def load_ckpt(model, cfg, optimizer=None, lr_scheduler=None, logger=None):
         status['epoch'] = checkpoint.get('epoch', 0) + 1
         status['global_step'] = checkpoint.get('global_step', 0)
         status['metrics'] = checkpoint.get('metrics', {})
+        if 'ema' in checkpoint:
+            status['ema'] = checkpoint['ema']
     elif pretrained_model and os.path.exists(pretrained_model):
         load_pretrained_params(model, pretrained_model)
         logger.info(f"finetune from checkpoint: {pretrained_model}")

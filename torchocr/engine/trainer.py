@@ -2,6 +2,7 @@
 # @Time    : 2023/8/26 11:34
 # @Author  : zhoujun
 
+import copy
 import datetime
 import os
 import random
@@ -21,6 +22,7 @@ from torchocr.modeling.architectures import build_model
 from torchocr.optimizer import build_optimizer
 from torchocr.postprocess import build_post_process
 from torchocr.utils.ckpt import save_ckpt, load_ckpt
+from torchocr.utils.ema import ModelEMA
 from torchocr.utils.logging import get_logger
 from torchocr.utils.stats import TrainingStats
 from torchocr.utils.utility import AverageMeter
@@ -118,8 +120,30 @@ class Trainer(object):
         self.eval_class = build_metric(self.cfg['Metric'])
 
         self.status = load_ckpt(self.model, self.cfg, self.optimizer, self.lr_scheduler)
+        ema_ckpt = self.status.pop('ema', None)
         self.logger.info("status from ckpt: {}".format(self.status))
-        
+
+        # EMA (PP-OCRv6: Global.use_ema). Tracks the unwrapped model.
+        self._raw_model = self.model
+        self.ema = None
+        if self.cfg['Global'].get('use_ema', False) and 'train' in mode:
+            self.ema = ModelEMA(
+                self.model,
+                decay=self.cfg['Global'].get('ema_decay', 0.9998),
+                gamma=self.cfg['Global'].get('ema_gamma', 2000),
+                ema_decay_type=self.cfg['Global'].get('ema_decay_type', 'threshold'),
+                ema_filter_no_grad=self.cfg['Global'].get('ema_filter_no_grad', False))
+            if ema_ckpt is not None:
+                # Checkpoint 'state_dict' holds EMA weights; restore the raw
+                # training weights and the EMA shadow for an exact resume.
+                if ema_ckpt.get('train_state') is not None:
+                    self.model.load_state_dict(ema_ckpt['train_state'])
+                self.ema.set_state_dict(ema_ckpt)
+                self.ema.to(self.device)
+                self.logger.info(f"EMA: restored training weights and EMA state (step {self.ema.step})")
+            self.logger.info(f"EMA enabled: decay={self.ema.decay}, gamma={self.ema.gamma}, "
+                             f"type={self.ema.ema_decay_type}")
+
         if self.cfg['Global']['distributed']:
             self.model = torch.nn.parallel.DistributedDataParallel(self.model, [self.local_rank], find_unused_parameters=True)
 
@@ -283,6 +307,8 @@ class Trainer(object):
                     self.scaler.scale(loss['loss']).backward()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
+                    if self.ema is not None:
+                        self.ema.update(self._raw_model)
                 else:
                     preds = self.model(batch[0], data=batch[1:])
                     loss = self.loss_class(preds, batch)
@@ -293,6 +319,8 @@ class Trainer(object):
                     avg_loss = loss['loss']
                     avg_loss.backward()
                     self.optimizer.step()
+                    if self.ema is not None:
+                        self.ema.update(self._raw_model)
 
                 if cal_metric_during_train:  # only rec and cls need
                     post_result = self.post_process_class(preds, batch)
@@ -353,6 +381,9 @@ class Trainer(object):
                     train_batch_cost = 0.0
                 reader_start = time.time()
             train_pbar.close()
+            # EMA: evaluate and save the averaged weights (Paddle behaviour);
+            # the raw training weights are stored alongside for resume.
+            ema_train_state = self._swap_in_ema() if self.local_rank == 0 else None
             # eval
             if self.local_rank == 0 and epoch > start_eval_epoch and (epoch - start_eval_epoch) % eval_epoch_step == 0:
                 cur_metric = self.eval()
@@ -380,13 +411,14 @@ class Trainer(object):
                     if self.wandb_run is not None:
                         self.wandb_run.summary[f'best_{self.eval_class.main_indicator}'] = best_metric[self.eval_class.main_indicator]
                     save_ckpt(self.model, self.cfg, self.optimizer, self.lr_scheduler, epoch, global_step, best_metric,
-                              is_best=True)
+                              is_best=True, **self._ema_ckpt_kwargs(ema_train_state))
                 best_str = f"best metric, {', '.join(['{}: {}'.format(k, v) for k, v in best_metric.items()])}"
                 self.logger.info(best_str)
 
             if self.local_rank == 0:
                 save_ckpt(self.model, self.cfg, self.optimizer, self.lr_scheduler, epoch, global_step, best_metric,
-                          is_best=False)
+                          is_best=False, **self._ema_ckpt_kwargs(ema_train_state))
+            self._swap_out_ema(ema_train_state)
         best_str = f"best metric, {', '.join(['{}: {}'.format(k, v) for k, v in best_metric.items()])}"
         self.logger.info(best_str)
         if self.writer is not None:
@@ -395,6 +427,23 @@ class Trainer(object):
             self.wandb_run.finish()
         if torch.cuda.device_count() > 1:
             torch.distributed.destroy_process_group()
+
+    def _swap_in_ema(self):
+        """Load EMA weights into the model; return the training weights."""
+        if self.ema is None:
+            return None
+        train_state = copy.deepcopy(self._raw_model.state_dict())
+        self._raw_model.load_state_dict(self.ema.apply())
+        return train_state
+
+    def _swap_out_ema(self, train_state):
+        if train_state is not None:
+            self._raw_model.load_state_dict(train_state)
+
+    def _ema_ckpt_kwargs(self, train_state):
+        if self.ema is None or train_state is None:
+            return {}
+        return {'ema': self.ema.state_dict_for_save(), 'train_state': train_state}
 
     def eval(self):
         self.model.eval()

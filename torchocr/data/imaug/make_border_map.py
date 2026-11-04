@@ -1,35 +1,46 @@
+# Ported from PaddleOCR ppocr/data/imaug/make_border_map.py (PP-OCRv6 version).
 import numpy as np
 import cv2
 
-np.seterr(divide='ignore', invalid='ignore')
+np.seterr(divide="ignore", invalid="ignore")
 import pyclipper
 from shapely.geometry import Polygon
+import sys
 import warnings
-from torchocr.utils.logging import get_logger
+
 warnings.simplefilter("ignore")
 
-__all__ = ['MakeBorderMap']
+__all__ = ["MakeBorderMap"]
 
 
 class MakeBorderMap(object):
-    def __init__(self,
-                 shrink_ratio=0.4,
-                 thresh_min=0.3,
-                 thresh_max=0.7,
-                 **kwargs):
+    def __init__(self, shrink_ratio=0.4, thresh_min=0.3, thresh_max=0.7, **kwargs):
         self.shrink_ratio = shrink_ratio
         self.thresh_min = thresh_min
         self.thresh_max = thresh_max
-        self.logger = get_logger()
-        if 'total_epoch' in kwargs and 'epoch' in kwargs and kwargs['epoch'] != "None":
-            self.shrink_ratio = self.shrink_ratio + 0.2 * kwargs['epoch'] / float(kwargs['total_epoch'])
-            self.logger.info('shrink_ratio: {}'.format(self.shrink_ratio))
+        if "total_epoch" in kwargs:
+            self._base_shrink_ratio = shrink_ratio
+            self._total_epoch = kwargs["total_epoch"]
+        # torchocr: SimpleDataSet.set_epoch_to_transforms injects the epoch into
+        # the op config when the dataloader is rebuilt (need_reset). Paddle reads
+        # it per-sample from data["epoch"]; both sources are honoured.
+        epoch = kwargs.get("epoch")
+        self._cfg_epoch = None if epoch in (None, "None") else epoch
+
+    def _get_epoch(self, data):
+        return data.get("epoch", self._cfg_epoch)
 
     def __call__(self, data):
+        img = data["image"]
+        text_polys = data["polys"]
+        ignore_tags = data["ignore_tags"]
 
-        img = data['image']
-        text_polys = data['polys']
-        ignore_tags = data['ignore_tags']
+        shrink_ratio = self.shrink_ratio
+        epoch = self._get_epoch(data)
+        if epoch is not None and hasattr(self, "_base_shrink_ratio"):
+            shrink_ratio = self._base_shrink_ratio + 0.2 * epoch / float(
+                self._total_epoch
+            )
 
         canvas = np.zeros(img.shape[:2], dtype=np.float32)
         mask = np.zeros(img.shape[:2], dtype=np.float32)
@@ -37,28 +48,38 @@ class MakeBorderMap(object):
         for i in range(len(text_polys)):
             if ignore_tags[i]:
                 continue
-            self.draw_border_map(text_polys[i], canvas, mask=mask)
+            self.draw_border_map(
+                text_polys[i], canvas, mask=mask, shrink_ratio=shrink_ratio
+            )
         canvas = canvas * (self.thresh_max - self.thresh_min) + self.thresh_min
 
-        data['threshold_map'] = canvas
-        data['threshold_mask'] = mask
+        data["threshold_map"] = canvas
+        data["threshold_mask"] = mask
         return data
 
-    def draw_border_map(self, polygon, canvas, mask):
+    def draw_border_map(self, polygon, canvas, mask, shrink_ratio=None):
+        if shrink_ratio is None:
+            shrink_ratio = self.shrink_ratio
         polygon = np.array(polygon)
         assert polygon.ndim == 2
         assert polygon.shape[1] == 2
 
+        if np.isnan(polygon).any():
+            return
         polygon_shape = Polygon(polygon)
         if polygon_shape.area <= 0:
             return
-        distance = polygon_shape.area * (
-            1 - np.power(self.shrink_ratio, 2)) / polygon_shape.length
+        distance = (
+            polygon_shape.area * (1 - np.power(shrink_ratio, 2)) / polygon_shape.length
+        )
         subject = [tuple(l) for l in polygon]
         padding = pyclipper.PyclipperOffset()
         padding.AddPath(subject, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
 
-        padded_polygon = np.array(padding.Execute(distance)[0])
+        padded_polygon = padding.Execute(distance)
+        if not padded_polygon:
+            return
+        padded_polygon = np.array(padded_polygon[0])
         cv2.fillPoly(mask, [padded_polygon.astype(np.int32)], 1.0)
 
         xmin = padded_polygon[:, 0].min()
@@ -72,14 +93,13 @@ class MakeBorderMap(object):
         polygon[:, 1] = polygon[:, 1] - ymin
 
         xs = np.broadcast_to(
-            np.linspace(
-                0, width - 1, num=width).reshape(1, width), (height, width))
+            np.linspace(0, width - 1, num=width).reshape(1, width), (height, width)
+        )
         ys = np.broadcast_to(
-            np.linspace(
-                0, height - 1, num=height).reshape(height, 1), (height, width))
+            np.linspace(0, height - 1, num=height).reshape(height, 1), (height, width)
+        )
 
-        distance_map = np.zeros(
-            (polygon.shape[0], height, width), dtype=np.float32)
+        distance_map = np.zeros((polygon.shape[0], height, width), dtype=np.float32)
         for i in range(polygon.shape[0]):
             j = (i + 1) % polygon.shape[0]
             absolute_distance = self._distance(xs, ys, polygon[i], polygon[j])
@@ -90,45 +110,49 @@ class MakeBorderMap(object):
         xmax_valid = min(max(0, xmax), canvas.shape[1] - 1)
         ymin_valid = min(max(0, ymin), canvas.shape[0] - 1)
         ymax_valid = min(max(0, ymax), canvas.shape[0] - 1)
-        canvas[ymin_valid:ymax_valid + 1, xmin_valid:xmax_valid + 1] = np.fmax(
-            1 - distance_map[ymin_valid - ymin:ymax_valid - ymax + height,
-                             xmin_valid - xmin:xmax_valid - xmax + width],
-            canvas[ymin_valid:ymax_valid + 1, xmin_valid:xmax_valid + 1])
+        canvas[ymin_valid : ymax_valid + 1, xmin_valid : xmax_valid + 1] = np.fmax(
+            1
+            - distance_map[
+                ymin_valid - ymin : ymax_valid - ymax + height,
+                xmin_valid - xmin : xmax_valid - xmax + width,
+            ],
+            canvas[ymin_valid : ymax_valid + 1, xmin_valid : xmax_valid + 1],
+        )
 
     def _distance(self, xs, ys, point_1, point_2):
-        '''
+        """
         compute the distance from point to a line
         ys: coordinates in the first axis
         xs: coordinates in the second axis
         point_1, point_2: (x, y), the end of the line
-        '''
+        """
         height, width = xs.shape[:2]
-        square_distance_1 = np.square(xs - point_1[0]) + np.square(ys - point_1[
-            1])
-        square_distance_2 = np.square(xs - point_2[0]) + np.square(ys - point_2[
-            1])
+        square_distance_1 = np.square(xs - point_1[0]) + np.square(ys - point_1[1])
+        square_distance_2 = np.square(xs - point_2[0]) + np.square(ys - point_2[1])
         square_distance = np.square(point_1[0] - point_2[0]) + np.square(
-            point_1[1] - point_2[1])
+            point_1[1] - point_2[1]
+        )
 
         cosin = (square_distance - square_distance_1 - square_distance_2) / (
-            2 * np.sqrt(square_distance_1 * square_distance_2))
+            2 * np.sqrt(square_distance_1 * square_distance_2)
+        )
         square_sin = 1 - np.square(cosin)
         square_sin = np.nan_to_num(square_sin)
-        result = np.sqrt(square_distance_1 * square_distance_2 * square_sin /
-                         square_distance)
+        result = np.sqrt(
+            square_distance_1 * square_distance_2 * square_sin / square_distance
+        )
 
-        result[cosin <
-               0] = np.sqrt(np.fmin(square_distance_1, square_distance_2))[cosin
-                                                                           < 0]
+        result[cosin < 0] = np.sqrt(np.fmin(square_distance_1, square_distance_2))[
+            cosin < 0
+        ]
         # self.extend_line(point_1, point_2, result)
         return result
 
     def extend_line(self, point_1, point_2, result, shrink_ratio):
-        ex_point_1 = (int(
-            round(point_1[0] + (point_1[0] - point_2[0]) * (1 + shrink_ratio))),
-                      int(
-                          round(point_1[1] + (point_1[1] - point_2[1]) * (
-                              1 + shrink_ratio))))
+        ex_point_1 = (
+            int(round(point_1[0] + (point_1[0] - point_2[0]) * (1 + shrink_ratio))),
+            int(round(point_1[1] + (point_1[1] - point_2[1]) * (1 + shrink_ratio))),
+        )
         cv2.line(
             result,
             tuple(ex_point_1),
@@ -136,12 +160,12 @@ class MakeBorderMap(object):
             4096.0,
             1,
             lineType=cv2.LINE_AA,
-            shift=0)
-        ex_point_2 = (int(
-            round(point_2[0] + (point_2[0] - point_1[0]) * (1 + shrink_ratio))),
-                      int(
-                          round(point_2[1] + (point_2[1] - point_1[1]) * (
-                              1 + shrink_ratio))))
+            shift=0,
+        )
+        ex_point_2 = (
+            int(round(point_2[0] + (point_2[0] - point_1[0]) * (1 + shrink_ratio))),
+            int(round(point_2[1] + (point_2[1] - point_1[1]) * (1 + shrink_ratio))),
+        )
         cv2.line(
             result,
             tuple(ex_point_2),
@@ -149,5 +173,6 @@ class MakeBorderMap(object):
             4096.0,
             1,
             lineType=cv2.LINE_AA,
-            shift=0)
+            shift=0,
+        )
         return ex_point_1, ex_point_2

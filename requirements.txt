@@ -1,6 +1,7 @@
 shapely
 scikit-image
 imgaug
+albumentations  # IaaAugment backend=albumentations (PP-OCRv6 configs)
 pyclipper
 lmdb
 tqdm
