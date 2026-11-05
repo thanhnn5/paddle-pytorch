@@ -33,3 +33,7 @@ pretrain_models
 *.pd*
 *.pte
 *.onnx
+
+weights/
+tmp/
+docs/
