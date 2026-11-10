@@ -1,5 +1,7 @@
 # 04 — Loss functions and training objectives for lightweight OCR
 
+> **Supervisor note (2026-11-10):** some claims in this raw note were corrected after fact-checking. See section 7 of [../README.md](../README.md) and [90-verification-log.md](90-verification-log.md); where they differ, the log is right.
+
 Track: how recognition (mostly CTC) and detection (DB) losses have changed over time, and which objective changes are cheap to try in our PyTorch port of PaddleOCR.
 Written 2026-11-10. Every number links to the source it came from. Anything I could not confirm from a primary source is tagged `[UNVERIFIED]`.
 

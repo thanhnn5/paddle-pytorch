@@ -1,5 +1,7 @@
 # 01 — PaddleOCR (Baidu) lineage: PP-OCR v1 → v6, PaddleOCR 3.x, PP-StructureV3, PP-ChatOCRv4, PaddleOCR-VL
 
+> **Supervisor note (2026-11-10):** some claims in this raw note were corrected after fact-checking. See section 7 of [../README.md](../README.md) and [90-verification-log.md](90-verification-log.md); where they differ, the log is right.
+
 *Survey note, compiled 2026-11-10. Every number carries a source tag such as [S3], and the tags resolve in the **Sources** list at the end. Items not confirmed from a primary source are tagged `[UNVERIFIED]`. "Config" means the official YAML in `PaddlePaddle/PaddleOCR@main` [S12].*
 
 > **How to read benchmark numbers.** Every PP-OCR generation reports accuracy on a **different in-house Baidu test set**, and the sets grew harder over time. Cross-version numbers are therefore only comparable *within one table from one source*. Examples: the PP-OCRv4 doc gives PP-OCRv3's end-to-end (e2e) Hmean as 57.99%, while the PP-OCRv3 paper gives 62.9%. The PP-OCRv6 table states it uses a different eval set from the v5/v4 numbers [S4][S3][S7].

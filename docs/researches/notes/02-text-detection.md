@@ -1,5 +1,7 @@
 # 02 — Scene/Document Text Detection: Architecture & Loss Evolution (2019 → late 2026)
 
+> **Supervisor note (2026-11-10):** some claims in this raw note were corrected after fact-checking. See section 7 of [../README.md](../README.md) and [90-verification-log.md](90-verification-log.md); where they differ, the log is right.
+
 _Track owner: research assistant. Compiled 2026-11-10. Scope: real-time / mobile-class detectors, losses, distillation, edge backbones._
 
 **Conventions**

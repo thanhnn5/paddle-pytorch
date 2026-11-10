@@ -1,5 +1,7 @@
 # 05 — Pre-training, self-/semi-supervised learning, synthetic data and large-model teachers for small OCR models
 
+> **Supervisor note (2026-11-10):** some claims in this raw note were corrected after fact-checking. See section 7 of [../README.md](../README.md) and [90-verification-log.md](90-verification-log.md); where they differ, the log is right.
+
 Survey date: 2026-11-10. Scope: how these techniques help OCR, and whether the gains carry over to **small** models (detector under 5M parameters, CTC recognizer under 10M).
 
 Conventions:
