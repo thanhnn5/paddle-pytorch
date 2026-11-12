@@ -1,0 +1,28 @@
+--- BN channels with stored running_var < 1e-6 (never active in training)
+backbone.blocks_s4.0.channel_mixer.compress.bn     dead  40/384  eval input var on dead: max 8.11e-12  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean 6.330e-21 max 2.274e-19 | live mean 3.294e-02
+backbone.blocks_s4.1.token_mixer.rep_dw.conv.bn    dead  87/384  eval input var on dead: max 6.27e-07  |gamma| on dead: mean 0.008  eval OUTPUT var: dead mean 1.025e-05 max 1.082e-04 | live mean 9.013e-02
+backbone.blocks_s4.1.token_mixer.rep_dw.bn         dead  59/384  eval input var on dead: max 3.47e-11  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean 2.250e-18 max 1.328e-16 | live mean 2.635e-01
+backbone.blocks_s4.1.channel_mixer.expand.bn       dead 199/768  eval input var on dead: max 2.42e-82  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean -2.602e-91 max 3.191e-90 | live mean 1.079e-01
+backbone.blocks_s4.1.channel_mixer.compress.bn     dead   7/384  eval input var on dead: max 1.32e-09  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean 3.223e-14 max 1.781e-13 | live mean 2.043e-02
+backbone.blocks_s4.2.token_mixer.rep_dw.conv.bn    dead  88/384  eval input var on dead: max 7.18e-07  |gamma| on dead: mean 0.001  eval OUTPUT var: dead mean 1.545e-06 max 1.323e-04 | live mean 1.189e-01
+backbone.blocks_s4.2.token_mixer.rep_dw.bn         dead  53/384  eval input var on dead: max 5.93e-10  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean 1.617e-14 max 8.566e-13 | live mean 1.499e-01
+backbone.blocks_s4.2.channel_mixer.expand.bn       dead 491/768  eval input var on dead: max 2.11e-78  |gamma| on dead: mean 0.000  eval OUTPUT var: dead mean -2.720e-91 max 3.805e-90 | live mean 2.929e-01
+--- SE gates
+backbone.blocks_s1.0.token_mixer.se        C= 48 mean 0.493  sat@0 0.000  sat@1 0.000  channels always 0: 0  always 1: 0  mean std over images 0.0667
+backbone.blocks_s2.1.token_mixer.se        C= 96 mean 0.489  sat@0 0.001  sat@1 0.000  channels always 0: 0  always 1: 0  mean std over images 0.0576
+backbone.blocks_s3.1.token_mixer.se        C=192 mean 0.516  sat@0 0.003  sat@1 0.001  channels always 0: 0  always 1: 0  mean std over images 0.0664
+backbone.blocks_s3.3.token_mixer.se        C=192 mean 0.416  sat@0 0.023  sat@1 0.000  channels always 0: 0  always 1: 0  mean std over images 0.0460
+backbone.blocks_s4.1.token_mixer.se        C=384 mean 0.436  sat@0 0.143  sat@1 0.072  channels always 0: 4  always 1: 6  mean std over images 0.0492
+neck.ins_conv.3.se_block                   C= 96 mean 0.304  sat@0 0.310  sat@1 0.100  channels always 0: 0  always 1: 0  mean std over images 0.0953
+neck.ins_conv.2.se_block                   C= 96 mean 0.521  sat@0 0.035  sat@1 0.003  channels always 0: 0  always 1: 0  mean std over images 0.0671
+neck.ins_conv.1.se_block                   C= 96 mean 0.339  sat@0 0.140  sat@1 0.058  channels always 0: 0  always 1: 0  mean std over images 0.0716
+neck.ins_conv.0.se_block                   C= 96 mean 0.350  sat@0 0.079  sat@1 0.003  channels always 0: 0  always 1: 0  mean std over images 0.0382
+neck.inp_conv_se.3                         C= 24 mean 0.425  sat@0 0.000  sat@1 0.000  channels always 0: 0  always 1: 0  mean std over images 0.0184
+neck.inp_conv_se.2                         C= 24 mean 0.522  sat@0 0.000  sat@1 0.018  channels always 0: 0  always 1: 0  mean std over images 0.0293
+neck.inp_conv_se.1                         C= 24 mean 0.474  sat@0 0.038  sat@1 0.000  channels always 0: 0  always 1: 0  mean std over images 0.0667
+neck.inp_conv_se.0                         C= 24 mean 0.494  sat@0 0.030  sat@1 0.008  channels always 0: 0  always 1: 0  mean std over images 0.1781
+--- RepLK neck: share of branch output energy (E[y^2] after BN)
+neck.inp_conv_dw.0 origin_bn=0.199 dil_bn_k5_1=0.529 dil_bn_k3_2=0.137 dil_bn_k3_3=0.135
+neck.inp_conv_dw.1 origin_bn=0.173 dil_bn_k5_1=0.600 dil_bn_k3_2=0.106 dil_bn_k3_3=0.121
+neck.inp_conv_dw.2 origin_bn=0.199 dil_bn_k5_1=0.467 dil_bn_k3_2=0.163 dil_bn_k3_3=0.171
+neck.inp_conv_dw.3 origin_bn=0.342 dil_bn_k5_1=0.151 dil_bn_k3_2=0.075 dil_bn_k3_3=0.432

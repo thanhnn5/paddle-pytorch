@@ -1,0 +1,32 @@
+train boxes 3139 tp 2361 | dev boxes 879 tp 693
+model box score                              all FP: AUC 0.795 | FP on non-empty imgs: AUC 0.799 | FP on empty imgs: AUC 0.789
+model mean logit                             all FP: AUC 0.855 | FP on non-empty imgs: AUC 0.860 | FP on empty imgs: AUC 0.850
+LDA on fuse (lam 0.01), fit on train         all FP: AUC 0.931 | FP on non-empty imgs: AUC 0.950 | FP on empty imgs: AUC 0.907
+LDA on fuse (lam 0.1), fit on train          all FP: AUC 0.933 | FP on non-empty imgs: AUC 0.951 | FP on empty imgs: AUC 0.911
+LDA on fuse (lam 1.0), fit on train          all FP: AUC 0.931 | FP on non-empty imgs: AUC 0.946 | FP on empty imgs: AUC 0.913
+LDA on fuse + logit                          all FP: AUC 0.933 | FP on non-empty imgs: AUC 0.951 | FP on empty imgs: AUC 0.911
+   train AUC (in-sample) 0.969; score AUC on train 0.871
+LDA on h1 (lam 0.01), fit on train           all FP: AUC 0.916 | FP on non-empty imgs: AUC 0.929 | FP on empty imgs: AUC 0.901
+LDA on h1 (lam 0.1), fit on train            all FP: AUC 0.921 | FP on non-empty imgs: AUC 0.932 | FP on empty imgs: AUC 0.907
+LDA on h1 (lam 1.0), fit on train            all FP: AUC 0.922 | FP on non-empty imgs: AUC 0.931 | FP on empty imgs: AUC 0.910
+LDA on h1 + logit                            all FP: AUC 0.920 | FP on non-empty imgs: AUC 0.929 | FP on empty imgs: AUC 0.908
+   train AUC (in-sample) 0.957; score AUC on train 0.871
+LDA on h2 (lam 0.01), fit on train           all FP: AUC 0.919 | FP on non-empty imgs: AUC 0.925 | FP on empty imgs: AUC 0.912
+LDA on h2 (lam 0.1), fit on train            all FP: AUC 0.913 | FP on non-empty imgs: AUC 0.919 | FP on empty imgs: AUC 0.905
+LDA on h2 (lam 1.0), fit on train            all FP: AUC 0.895 | FP on non-empty imgs: AUC 0.906 | FP on empty imgs: AUC 0.881
+LDA on h2 + logit                            all FP: AUC 0.907 | FP on non-empty imgs: AUC 0.914 | FP on empty imgs: AUC 0.899
+   train AUC (in-sample) 0.952; score AUC on train 0.871
+LDA on fuse, negatives = train empty only    all FP: AUC 0.915 | FP on non-empty imgs: AUC 0.933 | FP on empty imgs: AUC 0.892
+LDA on h2, negatives = train empty only      all FP: AUC 0.908 | FP on non-empty imgs: AUC 0.913 | FP on empty imgs: AUC 0.902
+-- fuse: dropping dev boxes below LDA quantile q -> (TP kept, FP kept); vs dropping by box score
+   q=0.05: LDA tp 691/693 fp 144/186 | score tp 682 fp 153
+   q=0.1: LDA tp 684/693 fp 107/186 | score tp 664 fp 127
+   q=0.15: LDA tp 672/693 fp 75/186 | score tp 639 fp 108
+   q=0.2: LDA tp 654/693 fp 49/186 | score tp 611 fp 92
+   q=0.3: LDA tp 590/693 fp 25/186 | score tp 548 fp 67
+-- h2: dropping dev boxes below LDA quantile q -> (TP kept, FP kept); vs dropping by box score
+   q=0.05: LDA tp 688/693 fp 147/186 | score tp 682 fp 153
+   q=0.1: LDA tp 685/693 fp 106/186 | score tp 664 fp 127
+   q=0.15: LDA tp 668/693 fp 79/186 | score tp 639 fp 108
+   q=0.2: LDA tp 647/693 fp 56/186 | score tp 611 fp 92
+   q=0.3: LDA tp 582/693 fp 33/186 | score tp 548 fp 67

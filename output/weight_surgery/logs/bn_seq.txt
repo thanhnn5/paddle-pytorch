@@ -1,0 +1,87 @@
+calibration images: 240
+layer                                                LOCAL mismatch with upstream recalibrated: mean|z|, mean log2 var ratio, min, max
+backbone.stem.stem1.bn                               0.286 -0.016 -0.60 +1.13
+backbone.stem.stem2a.bn                              0.167 +0.362 -0.98 +2.31
+backbone.stem.stem2b.bn                              0.135 +0.253 -0.95 +1.52
+backbone.stem.stem3.bn                               0.188 +0.196 -0.67 +1.23
+backbone.stem.stem4.bn                               0.090 +0.295 -0.61 +1.96
+backbone.blocks_s1.0.token_mixer.rep_dw.conv.bn      0.078 +0.182 -1.31 +2.75
+backbone.blocks_s1.0.token_mixer.rep_dw.bn           0.066 +0.068 -2.19 +1.50
+backbone.blocks_s1.0.channel_mixer.expand.bn         0.012 +0.100 -0.46 +0.74
+backbone.blocks_s1.0.channel_mixer.compress.bn       0.082 -0.099 -0.66 +0.25
+backbone.blocks_s1.1.token_mixer.rep_dw.conv.bn      0.010 +0.038 -0.38 +0.74
+backbone.blocks_s1.1.token_mixer.rep_dw.bn           0.003 -0.001 -0.17 +0.25
+backbone.blocks_s1.1.channel_mixer.expand.bn         0.000 -0.059 -0.41 +0.48
+backbone.blocks_s1.1.channel_mixer.compress.bn       0.063 +0.022 -0.33 +0.52
+backbone.blocks_s2.0.token_mixer.dw_conv.bn          0.006 -0.093 -0.45 +0.26
+backbone.blocks_s2.0.channel_mixer.expand.bn         0.000 -0.048 -0.43 +0.34
+backbone.blocks_s2.0.channel_mixer.compress.bn       0.039 -0.100 -0.75 +0.28
+backbone.blocks_s2.1.token_mixer.rep_dw.conv.bn      0.013 -0.021 -0.29 +0.31
+backbone.blocks_s2.1.token_mixer.rep_dw.bn           0.000 +0.015 -0.21 +0.39
+backbone.blocks_s2.1.channel_mixer.expand.bn         0.007 -0.094 -0.57 +0.33
+backbone.blocks_s2.1.channel_mixer.compress.bn       0.066 +0.141 -0.19 +0.47
+backbone.blocks_s2.2.token_mixer.rep_dw.conv.bn      0.010 -0.029 -0.35 +0.24
+backbone.blocks_s2.2.token_mixer.rep_dw.bn           0.002 -0.008 -0.15 +0.19
+backbone.blocks_s2.2.channel_mixer.expand.bn         0.000 -0.087 -0.71 +0.27
+backbone.blocks_s2.2.channel_mixer.compress.bn       0.078 +0.002 -0.48 +0.35
+backbone.blocks_s3.0.token_mixer.dw_conv.bn          0.013 -0.041 -0.43 +0.46
+backbone.blocks_s3.0.channel_mixer.expand.bn         0.000 -0.074 -0.87 +0.54
+backbone.blocks_s3.0.channel_mixer.compress.bn       0.046 +0.063 -0.54 +0.53
+backbone.blocks_s3.1.token_mixer.rep_dw.conv.bn      0.019 +0.012 -0.36 +0.34
+backbone.blocks_s3.1.token_mixer.rep_dw.bn           0.000 +0.001 -0.13 +0.25
+backbone.blocks_s3.1.channel_mixer.expand.bn         0.009 -0.108 -0.87 +0.31
+backbone.blocks_s3.1.channel_mixer.compress.bn       0.068 -0.052 -2.35 +0.39
+backbone.blocks_s3.2.token_mixer.rep_dw.conv.bn      0.015 +0.002 -0.35 +0.29
+backbone.blocks_s3.2.token_mixer.rep_dw.bn           0.003 -0.008 -0.23 +0.20
+backbone.blocks_s3.2.channel_mixer.expand.bn         0.000 -0.107 -0.55 +0.36
+backbone.blocks_s3.2.channel_mixer.compress.bn       0.061 -0.041 -0.70 +0.41
+backbone.blocks_s3.3.token_mixer.rep_dw.conv.bn      0.014 +0.010 -0.32 +0.43
+backbone.blocks_s3.3.token_mixer.rep_dw.bn           0.000 +0.003 -0.31 +0.27
+backbone.blocks_s3.3.channel_mixer.expand.bn         0.006 -0.150 -0.84 +0.45
+backbone.blocks_s3.3.channel_mixer.compress.bn       0.041 -0.143 -0.65 +0.30
+backbone.blocks_s3.4.token_mixer.rep_dw.conv.bn      0.015 -0.013 -0.38 +0.45
+backbone.blocks_s3.4.token_mixer.rep_dw.bn           0.002 +0.013 -0.22 +0.36
+backbone.blocks_s3.4.channel_mixer.expand.bn         0.000 -0.132 -0.67 +0.37
+backbone.blocks_s3.4.channel_mixer.compress.bn       0.055 -0.104 -0.64 +0.35
+backbone.blocks_s4.0.token_mixer.dw_conv.bn          0.014 +0.023 -0.75 +0.46
+backbone.blocks_s4.0.channel_mixer.expand.bn         0.000 -0.139 -1.50 +0.48
+backbone.blocks_s4.0.channel_mixer.compress.bn       0.017 -0.494 -4.76 +0.40
+backbone.blocks_s4.1.token_mixer.rep_dw.conv.bn      0.018 -0.000 -0.84 +0.41
+backbone.blocks_s4.1.token_mixer.rep_dw.bn           0.000 -0.098 -2.36 +0.24
+backbone.blocks_s4.1.channel_mixer.expand.bn         0.003 -0.419 -2.95 +0.40
+backbone.blocks_s4.1.channel_mixer.compress.bn       0.018 -0.431 -2.51 +0.69
+backbone.blocks_s4.2.token_mixer.rep_dw.conv.bn      0.018 +0.054 -1.77 +3.95
+backbone.blocks_s4.2.token_mixer.rep_dw.bn           0.005 +0.005 -3.13 +2.59
+backbone.blocks_s4.2.channel_mixer.expand.bn         0.000 -0.072 -3.19 +0.65
+backbone.blocks_s4.2.channel_mixer.compress.bn       0.024 -0.445 -2.51 +0.56
+neck.inp_conv_dw.3.origin_bn                         0.025 -1.654 -6.52 +1.01
+neck.inp_conv_dw.3.dil_bn_k5_1                       0.017 -1.453 -5.59 +0.76
+neck.inp_conv_dw.3.dil_bn_k3_2                       0.022 -1.047 -4.20 +0.79
+neck.inp_conv_dw.3.dil_bn_k3_3                       0.036 -0.785 -4.10 +1.33
+neck.inp_conv_dw.2.origin_bn                         0.017 -0.525 -4.91 +0.64
+neck.inp_conv_dw.2.dil_bn_k5_1                       0.014 -0.421 -5.80 +0.61
+neck.inp_conv_dw.2.dil_bn_k3_2                       0.013 -0.376 -5.27 +0.64
+neck.inp_conv_dw.2.dil_bn_k3_3                       0.017 -0.353 -3.34 +0.65
+neck.inp_conv_dw.1.origin_bn                         0.015 -0.148 -0.98 +0.58
+neck.inp_conv_dw.1.dil_bn_k5_1                       0.009 -0.132 -0.64 +0.51
+neck.inp_conv_dw.1.dil_bn_k3_2                       0.010 -0.157 -0.70 +0.39
+neck.inp_conv_dw.1.dil_bn_k3_3                       0.012 -0.135 -0.59 +0.58
+neck.inp_conv_dw.0.origin_bn                         0.009 -0.245 -3.55 +0.38
+neck.inp_conv_dw.0.dil_bn_k5_1                       0.006 -0.199 -5.62 +0.42
+neck.inp_conv_dw.0.dil_bn_k3_2                       0.007 -0.153 -1.67 +0.32
+neck.inp_conv_dw.0.dil_bn_k3_3                       0.009 -0.136 -1.11 +0.26
+head.binarize.conv_bn1                               0.003 -0.077 -0.27 +0.07
+head.binarize.conv_bn2                               0.016 -0.039 -0.16 +0.04
+original                               evalpy P 0.8355 R 0.9484 H 0.8884 (gt 814 det 924 tp 772) | all P 0.7571 R 0.9464 H 0.8413 (gt 728 det 910 tp 689)
+sequential recal, all layers (240 img) evalpy P 0.6528 R 0.8845 H 0.7512 (gt 814 det 1103 tp 720) | all P 0.5836 R 0.8777 H 0.7010 (gt 728 det 1095 tp 639)
+                                       evalpy dP -0.1827 [-0.2120,-0.1535] | dR -0.0639 [-0.0873,-0.0420] | dH -0.1372 [-0.1605,-0.1148]
+                                       all    dP -0.1736 [-0.2003,-0.1473] | dR -0.0687 [-0.0928,-0.0461] | dH -0.1402 [-0.1625,-0.1184]
+interp original->recal alpha=0.25      evalpy P 0.8067 R 0.9484 H 0.8718 (gt 814 det 957 tp 772) | all P 0.7227 R 0.9451 H 0.8190 (gt 728 det 952 tp 688)
+                                       evalpy dP -0.0288 [-0.0438,-0.0136] | dR +0.0000 [-0.0078,+0.0086] | dH -0.0166 [-0.0267,-0.0061]
+                                       all    dP -0.0345 [-0.0493,-0.0194] | dR -0.0014 [-0.0096,+0.0068] | dH -0.0222 [-0.0325,-0.0115]
+interp original->recal alpha=0.5       evalpy P 0.7485 R 0.9324 H 0.8304 (gt 814 det 1014 tp 759) | all P 0.6637 R 0.9299 H 0.7746 (gt 728 det 1020 tp 677)
+                                       evalpy dP -0.0870 [-0.1108,-0.0625] | dR -0.0160 [-0.0289,-0.0037] | dH -0.0580 [-0.0753,-0.0405]
+                                       all    dP -0.0934 [-0.1153,-0.0719] | dR -0.0165 [-0.0301,-0.0028] | dH -0.0667 [-0.0838,-0.0500]
+interp original->recal alpha=0.75      evalpy P 0.6809 R 0.8993 H 0.7750 (gt 814 det 1075 tp 732) | all P 0.6017 R 0.8942 H 0.7193 (gt 728 det 1082 tp 651)
+                                       evalpy dP -0.1546 [-0.1807,-0.1281] | dR -0.0491 [-0.0685,-0.0307] | dH -0.1134 [-0.1339,-0.0933]
+                                       all    dP -0.1555 [-0.1795,-0.1322] | dR -0.0522 [-0.0732,-0.0326] | dH -0.1219 [-0.1420,-0.1026]

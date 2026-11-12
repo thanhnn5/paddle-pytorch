@@ -42,7 +42,8 @@ def load_sd(path=ORIG):
 def save_sd(sd, path, ref=None):
     """Save an edited state_dict, checking names/shapes/dtypes against the original."""
     ref = ref if ref is not None else load_sd()
-    assert list(sd.keys()) == list(ref.keys()), 'tensor names changed'
+    assert set(sd.keys()) == set(ref.keys()), 'tensor names changed'
+    sd = {k: sd[k] for k in ref}  # keep the original key order
     for k in ref:
         assert sd[k].shape == ref[k].shape and sd[k].dtype == ref[k].dtype, k
         assert torch.isfinite(sd[k].float()).all(), k
