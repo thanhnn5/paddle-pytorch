@@ -181,3 +181,79 @@ moving thresholds, as expected. **Scaling is not equivalent to moving thresh/box
 changes the box score from a saturated mean probability into something close to the mean logit,
 and it beats the postprocess-only ceiling by +0.017 hmean on val_dev (0.9215 vs 0.9044). By the
 task's definition this is still a global knob (baseline B), so it is the bar for targeted edits.
+
+Finer s grid at fixed pp (`ws/33_B_fine.py`): plateau for s in [0.20, 0.27], val_dev evalpy H 0.9102-0.9161,
+paired dH vs original +0.022 to +0.028, all intervals above +0.013. s = 0.25 taken (middle of the plateau):
+evalpy P 0.8884 R 0.9386 H 0.9128, dH +0.0244 [+0.0157, +0.0336]; all H 0.8764, dH +0.0352 [+0.0256, +0.0451].
+Caveat: B rescales the score axis, so it is tied to box_thresh 0.45. At A* (box_thresh 0.65) recall collapses.
+
+## 8. H3 — causal scan of the neck channels read by the head (`ws/headlab.py`, `ws/40_channel_scan.py`)
+
+Head-only lab: neck outputs of 700 train images cached (300 empty-label, 400 with labels; 420 TP boxes,
+294 FP boxes). For each of the 96 neck output channels, `head.binarize.conv1.weight[:, c]` is multiplied by
+0 (ablate) or 2 and the change of the mean logit inside baseline boxes is measured (`logs/channel_scan.txt`).
+
+Most FP-selective channels (ablation): dTP / dFP in logits
+| channel (level) | ablate dTP | ablate dFP | background pixels above contour | double dTP | double dFP |
+|---|---|---|---|---|---|
+| 79 (p2) | +0.03 | -0.87 | -1387 | -0.23 | +0.05 |
+| 83 (p2) | +0.01 | -0.33 | -369 | -0.02 | +0.27 |
+| 80 (p2) | +0.01 | -0.17 | -314 | -0.01 | +0.15 |
+| 66 (p3) | +0.00 | -0.14 | -394 | -0.01 | +0.10 |
+| 88 (p2) | -0.00 | -0.12 | -120 | -0.00 | +0.09 |
+FP-suppressing channels (doubling lowers FP, TP unchanged): 38 (p4) -0.06/-0.37, 77 (p2) 0.00/-0.30,
+68 (p3) -0.04/-0.33, 50 (p3) -0.04/-0.36.
+
+Dose-response of channel 79 on val_dev, fixed pp, original score scale (`ws/41_e2_dose.py`):
+| gain on ch 79 | evalpy H | dH [95% CI] | all H |
+|---|---|---|---|
+| 2 (reverse) | 0.8844 | -0.0039 [-0.0076, -0.0005] | 0.8369 |
+| 1.5 (reverse) | 0.8880 | -0.0004 [-0.003, +0.002] | 0.8404 |
+| 1 (original) | 0.8884 | | 0.8413 |
+| 0.5 | 0.8904 | +0.0020 [-0.0005, +0.005] | 0.8444 |
+| 0 | 0.8921 | +0.0037 [-0.0005, +0.009] | 0.8466 |
+| -0.5 | 0.8952 | +0.0068 [+0.0015, +0.013] | 0.8529 |
+| -1 | 0.8970 | +0.0087 [+0.0006, +0.017] | 0.8568 |
+Monotone in the predicted direction, reversed sign when amplified; recall unchanged up to gain -0.5.
+
+**E2** = gain 0 on channels 79, 83, 80, 66, 88 and gain 2 on channels 38, 77, 68, 50 (channels chosen on
+train, strengths 0 / 2 chosen as the plain "ablate / double"; the combination was picked among 11 variants
+looked at on val_dev, so its dev numbers are optimistic).
+- Train lab: dTP -0.21, dFP -3.44, AUC(mean logit) 0.8885 -> 0.9245. Control: 20 random channel sets with
+  the same edit shape give AUC 0.878 on average (min 0.742, max 0.916) and dFP-dTP +0.10 on average.
+- Mean pooled activation of channel 79 does not itself separate the groups (TP +3.4 sd, non-text FP +2.4 sd):
+  the claim is causal (what the head does with the channel), not "the channel fires on false positives".
+
+## 9. Candidates on val_dev (`ws/50_make_candidates.py`, `ws/51_cand_dev.py`, `logs/cand_dev.txt`)
+
+A* = best postprocess from baseline A on val_dev = (thresh 0.10, box_thresh 0.65, unclip 1.3).
+evalpy hmean (all-images hmean in brackets); everything here was used for selection.
+
+| checkpoint | fixed pp | at A* | own best pp on dev |
+|---|---|---|---|
+| original | 0.8884 (0.8413) | 0.9044 (0.8638) | 0.9044 @ A* |
+| E2 (targeted) | 0.8969 (0.8561) | 0.9166 (0.8814) | 0.9166 @ A* |
+| B (s = 0.25, knob) | 0.9128 (0.8764) | 0.8176 (0.8013) | 0.9215 @ (0.1, 0.5, 1.3) |
+| BE2 (both) | 0.9194 (0.8895) | 0.7977 (0.7807) | 0.9237 @ (0.1, 0.4, 1.4) |
+
+Paired bootstrap on val_dev (evalpy):
+- E2 vs original, fixed pp: dH +0.0085 [+0.0011, +0.0158]; both at A*: dH +0.0122 [+0.0052, +0.0200].
+  So E2 beats the unedited model at the fixed postprocess and adds on top of the best postprocess.
+- BE2 vs B, fixed pp: dH +0.0067 [+0.0011, +0.0126] (all: +0.0130 [+0.0061, +0.0205]); at B's best pp the
+  difference is inside the noise (-0.008 [-0.018, +0.000] at (0.1, 0.5, 1.3)). E2 and B remove largely the
+  same low-logit boxes; once the score is un-saturated and the threshold tuned, E2 adds little.
+- Which of the 186 hand-tallied baseline FPs survive at fixed pp:
+  | | unannotated numbers (72) | letters (39) | non-text (75) |
+  |---|---|---|---|
+  | B | 62 | 28 | 34 |
+  | E2 | 64 | 32 | 49 |
+  | BE2 | 54 | 23 | 21 |
+  Both edits remove mostly non-text patterns (BE2: 72% of them) and few of the unannotated numbers (25%).
+
+## 10. Decision rule for the holdout (written before any holdout evaluation)
+
+Three holdout evaluations (E2, B, BE2), each checkpoint scored only at settings fixed in advance:
+the fixed pp; A* = (0.10, 0.65, 1.3); and its own dev-best pp (E2: A*; B: (0.1, 0.5, 1.3); BE2: (0.1, 0.4, 1.4)).
+No sweep on the holdout. An edit qualifies if its holdout hmean (evalpy, fixed pp) is above the original's.
+Frozen candidate: BE2 if E2 qualifies and BE2 >= B on the holdout at fixed pp; else B if B qualifies;
+else E2 if E2 qualifies; else none.

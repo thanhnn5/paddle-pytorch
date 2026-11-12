@@ -1,0 +1,9 @@
+pooled neck-channel activation by box group (val_dev), in units of the std over all boxes
+group      n   ch79 ch83 ch80 ch66 ch88 ch38 ch77 ch68 ch50
+TP       693   +3.44 -0.77 -0.58 +0.89 -0.68 +2.66 +0.42 -0.37 -0.14
+FP N      72   +3.54 -2.10 -1.66 +1.44 +1.12 +2.08 -0.10 -1.43 +0.65
+FP L      39   +2.72 -0.68 -0.73 +0.87 +0.14 +2.10 +0.59 -1.07 +0.43
+FP X      75   +2.37 -1.25 -1.08 +1.66 +0.33 +2.00 +1.21 -1.23 +0.90
+HeadLab: 700 images, boxes TP 420 FP 294 other 3
+E2 on train lab: dTP -0.213 dFP -3.436 newbg -1704 AUC 0.9245 (baseline AUC 0.8885)
+20 random channel sets, same edit shape: AUC mean 0.8779 min 0.7417 max 0.9158 | dFP-dTP mean +0.105 min -0.511 max +1.324
