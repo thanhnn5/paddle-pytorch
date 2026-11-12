@@ -1,0 +1,72 @@
+TASK. Improve a trained text-detection model by EDITING ITS WEIGHTS DIRECTLY, without gradient training. The model is our PP-OCRv6 small detector (DB algorithm: PPLCNetV4 backbone, RepLKFPN neck with 96 channels, DBHead; 600 tensors, about 2.68M parameters), ported from Paddle to PyTorch in this repo. The checkpoint is weights/best_accuracy.pth (a dict with one key, "state_dict"). The goal is a higher hmean, with precision and recall reported alongside it: edits are developed on data/ocr_det_mask_3-1 (train.txt and val.txt) and the final result is confirmed once on the separate test set data/ocr_test_20251127/test.txt.
+
+This is an experiment modelled on "weight-space programming", where an LLM agent diagnosed why a small language model failed, traced the failure to specific components and repaired them by hand-computed weight edits. prompts/prompt.txt is the task prompt from that work; read it for the spirit of the method (diagnose, localize causally, measure with enough power), but its tools, budgets and rules do not apply here. The rules below do.
+
+Be realistic about what this can achieve. In the language-model case the big gain came from removing one fault (repetition loops) that was hiding ability the model already had. Our detector is a small CNN already fine-tuned in-domain for 263 epochs, and it may have no single fault of that kind. A well-supported finding that no weight edit beats the baselines below is a useful result, and I would much rather have that than a gain that comes from fitting the validation set. Do not stop early on that conclusion, though: work through the error analysis and the hypotheses first.
+
+THE FIXED MEASUREMENT. Run from the repo root:
+
+  env -u LD_LIBRARY_PATH python tools/eval.py -c configs/det/PP-OCRv6/PP-OCRv6_small_det.yml \
+    -o Global.pretrained_model=<checkpoint.pth> \
+       Eval.dataset.data_dir=data/ocr_det_mask_3-1 \
+       Eval.dataset.label_file_list='[data/ocr_det_mask_3-1/val.txt]'
+
+The `env -u LD_LIBRARY_PATH` part is required on this machine: the system cuDNN 9.12 on LD_LIBRARY_PATH shadows the cuDNN 9.26 that torch ships with, and every convolution fails with CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED without it. Use it for every Python process that touches the GPU.
+
+The config already carries the postprocess of the original training run (thresh 0.2, box_thresh 0.45, unclip_ratio 1.4) and the default test resize. The metric is DetMetric (IoU 0.5, ICDAR-style matching). On the unedited checkpoint this gives precision 0.8499, recall 0.9434, hmean 0.8943 over 1,553 images in about 80 seconds on the L4 GPU. Reproduce these numbers before changing anything.
+
+Precision is nine points below recall, so false positives (or boxes that miss IoU 0.5 through splitting, merging or loose geometry) are the largest error category to explain.
+
+DATA AND THE OVERFITTING PROBLEM. val.txt is the only validation data, and the checkpoint was already selected on it (the Paddle training run recorded hmean 0.8937 for this checkpoint as its best). Any edit chosen by looking at val scores will look better than it is. So:
+
+1. Before any analysis, split val.txt deterministically by image name into two halves, val_dev and val_holdout, and write both label files to disk (under output/, not under data/).
+2. Use data/ocr_det_mask_3-1/train.txt (10,600 images) and val_dev for diagnosis, statistics and choosing edits. The model was trained on the train images, so its errors there are rarer and not representative; treat train as a source of activations and statistics, and val_dev as the place to see real failures. A subset of train is not a holdout for the same reason: scores on it say little about generalization.
+3. Do not evaluate on val_holdout until you have a small number of candidate edits (at most five holdout evaluations in the whole session, and log each one). An edit qualifies as a candidate for the final test only if it improves hmean on val_holdout.
+4. Judge differences with a paired bootstrap over images (same images, edited versus original), and report the confidence interval. Differences inside the noise are not gains.
+
+THE FINAL TEST. data/ocr_test_20251127/test.txt (images in data/ocr_test_20251127/images) is the test set: 2,990 images with 1,267 ground-truth polygons, no image shared with train or val. It is the final, unbiased check, and it stays that way only if it is never used to choose anything.
+
+- Do not run any model on the test set, look at its images or read its labels during diagnosis and selection. No sweeps on it, no error analysis on it.
+- When the work is finished, freeze the choice: one edited checkpoint (or none), plus the best postprocess setting from baseline A. Write the frozen choice into notes.md first. Then evaluate the original and the frozen candidate on test, once each, at the fixed postprocess and at the frozen best postprocess. Nothing gets changed afterwards on the strength of the test numbers; if the test result is disappointing, report it as it is.
+- The test set differs from val in a way that matters: 1,837 of its 2,990 images contain no text at all, so every false positive on an empty image costs precision and nothing can be gained there in recall. An edit or a threshold that trades precision for recall on val may do worse on test. Keep that in mind when choosing, and when the val and test results disagree, explain the disagreement with this in view.
+- Earlier evaluations of other models on this test set (scripts/eval.sh, docs/eval_det_extended.md) used a 1280-max test resize and box_thresh 0.6. The headline test numbers here use the same fixed protocol as val, so that the comparison is consistent; also report the original and the frozen candidate under the 1280-max, box_thresh 0.6 setting as a secondary row.
+
+WHAT IS IN SCOPE. Changes to the values of the tensors in the state_dict: same names, same shapes, same dtypes, so the edited checkpoint loads with the same config and still exports with tools/deployment (we ship this model as MNN and CoreML). The model architecture, the config, the postprocess parameters and the test resize are fixed for the headline measurement.
+
+Allowed methods: any analysis of the weights; any forward passes with hooks, activation capture, ablation and patching (forward passes are cheap here, there is no budget); edits you compute from that evidence; forward-only statistics such as re-estimating BatchNorm running statistics; closed-form solutions (for example a least-squares or ridge refit of a single linear layer on captured features), provided they are fitted on train.txt only.
+
+Not allowed: backward passes, autograd, optimizers or any iterative fitting of weights to a loss; black-box search over weight values scored on val (random search, evolutionary search, coordinate descent against the metric); changing code under torchocr/ or the config to get the gain.
+
+THE BASELINES AN EDIT HAS TO BEAT. Some gains are available without touching weights, and some weight edits are only those gains in disguise. Establish these first on val_dev:
+
+A. Postprocess only: a sweep of thresh, box_thresh and unclip_ratio around the current values. This is the cheapest lever we have, and I want to know its ceiling regardless.
+B. Global knobs in weights: shifting the bias or scaling the last layer of the binarize head is equivalent to moving thresh and box_thresh. It is a legitimate edit, but it counts as baseline A, not as surgery.
+
+A targeted edit is interesting when it beats the unedited model at the fixed postprocess AND still adds something on top of the best postprocess setting from A. Report three numbers for the final candidates: the edit at the fixed postprocess, the best postprocess alone, and both combined.
+
+HOW TO WORK.
+
+1. Build the tooling once: a script that loads the model from the config and a state_dict, runs it over a label file, and returns per-image predictions, the probability map and matched/unmatched boxes, so that every later experiment is a paired comparison on the same images. Reuse the repo's own model builder, transforms, DBPostProcess and DetMetric so the numbers agree with tools/eval.py; verify that agreement on the full val set. tools/eval_det_extended.py already gives IoU sweeps, size-stratified recall and per-image FP/FN counts from prediction files.
+
+2. Diagnose before editing. Build an error taxonomy on val_dev and look at examples of each kind (render crops with predictions and ground truth and view them): false positives on non-text patterns; one ground-truth box split into several predictions; several boxes merged into one; boxes with IoU between 0.3 and 0.5 that are too loose, too tight or shifted; missed boxes by size; and apparent label errors, where the prediction looks right and the annotation looks wrong. Count each category. If a large share of the "errors" are label noise, say so with examples, because that caps what any edit can do.
+
+3. Go after the largest category you can explain, and localize causally. A channel being more active on false positives is not enough. Show that changing the component changes the behaviour you predicted, with a dose-response over several strengths, and check what it costs in recall.
+
+4. Hypotheses worth testing, as starting points and not as a checklist to stop at:
+   - Train/test statistics mismatch. Training used 640x640 random crops with heavy augmentation; evaluation uses whole images at the test resize. BatchNorm running statistics may not match eval-time activations. Compare the stored statistics with those measured on train images under the eval pipeline, and test recalibration (all layers, or only where the mismatch is large).
+   - Paddle-to-PyTorch port residue. docs/paddle_det_port_parity.md and the SE hardsigmoid slope fix (commit 48f2747) show the port has had numerical parity bugs before. Parity on the headline metric looks fine (0.8937 in Paddle, 0.8943 here), but check layer by layer for anything left over.
+   - Channels or directions that drive false positives. In the neck output and the binarize head, find features that separate false-positive regions from true-positive regions, then ablate, rescale or project them out and measure.
+   - Split and merge errors. These come from the probability map's shape between adjacent text instances; look at what the threshold branch and the last upsampling layers do in those regions.
+   - Squeeze-excitation gates and the RepLK branches of the neck: dead, saturated or redundant units.
+   - A closed-form refit of the final 1x1 or transposed-conv layer of the binarize head on train features. This has the highest risk of overfitting; hold it to the holdout rule strictly.
+   The aux heads (head.aux_*) are used only by the training loss; confirm that, and do not spend time on them if so.
+
+5. Keep a running log at output/weight_surgery/notes.md: each hypothesis, the experiment, the numbers (val_dev, paired difference, interval), and the decision. Save every candidate checkpoint under output/weight_surgery/ with a name that says what was edited. Never overwrite weights/best_accuracy.pth.
+
+6. Work autonomously. Nothing here needs my confirmation except writing outside output/ and prompts/. Do not commit anything.
+
+WHAT TO DELIVER. At the end:
+- The best edited checkpoint at output/weight_surgery/best_edited.pth, or a clear statement that no edit qualified.
+- A report at output/weight_surgery/report.md that leads with the result: a table of precision, recall and hmean for the original and the final candidates on val_dev, val_holdout, full val and the test set, at the fixed postprocess and at the best postprocess, with paired-bootstrap intervals. The test rows are the headline. Then, for each edit kept: which tensors changed and by how much, the evidence that the component causes the failure it was meant to fix, and the dose-response. Then the error taxonomy with counts, the hypotheses that failed and why, and how many holdout evaluations were used.
+- Mark clearly which numbers were measured on data used to choose the edit and which on held-out data. If something could not be verified, say so.
+- If the evidence points to fine-tuning, relabelling or a postprocess change as the better route to a higher score, say that plainly and give the numbers behind it.
