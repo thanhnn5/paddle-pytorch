@@ -1,0 +1,22 @@
+test: 2990 images, 1837 empty
+('default', 'orig', 'fixed')     all P 0.3168 R 0.8903 H 0.4673 (gt 1249 det 3510 tp 1112) | evalpy P 0.7751 R 0.8855 H 0.8266 (gt 3214 det 3672 tp 2846) | boxes on empty images 2083 (images 1302)
+('default', 'orig', 'A*')        all P 0.3951 R 0.8823 H 0.5458 (gt 1249 det 2789 tp 1102) | evalpy P 0.8347 R 0.8811 H 0.8573 (gt 3214 det 3393 tp 2832) | boxes on empty images 1465 (images 1028)
+('default', 'B', 'fixed')        all P 0.4468 R 0.8775 H 0.5921 (gt 1249 det 2453 tp 1096) | evalpy P 0.8567 R 0.8721 H 0.8643 (gt 3214 det 3272 tp 2803) | boxes on empty images 1175 (images 878)
+('default', 'B', 'A*')           all P 0.8663 R 0.6173 H 0.7209 (gt 1249 det 890 tp 771) | evalpy P 0.9607 R 0.6164 H 0.7509 (gt 3214 det 2062 tp 1981) | boxes on empty images 93 (images 88)
+('1280max', 'orig', 'bt0.6')     all P 0.3732 R 0.8823 H 0.5245 (gt 1249 det 2953 tp 1102) | evalpy P 0.8186 R 0.8749 H 0.8458 (gt 3214 det 3435 tp 2812) | boxes on empty images 1614 (images 1108)
+('1280max', 'B', 'bt0.6')        all P 0.7165 R 0.7830 H 0.7483 (gt 1249 det 1365 tp 978) | evalpy P 0.9351 R 0.7800 H 0.8506 (gt 3214 det 2681 tp 2507) | boxes on empty images 316 (images 286)
+B@fixed vs orig@fixed
+    all    dP +0.1300 [+0.1199,+0.1405] | dR -0.0128 [-0.0195,-0.0071] | dH +0.1248 [+0.1161,+0.1338]
+    evalpy dP +0.0816 [+0.0645,+0.0997] | dR -0.0134 [-0.0223,-0.0062] | dH +0.0377 [+0.0284,+0.0473]
+orig@A* vs orig@fixed (postprocess alone)
+    all    dP +0.0783 [+0.0708,+0.0862] | dR -0.0080 [-0.0162,+0.0000] | dH +0.0785 [+0.0709,+0.0862]
+    evalpy dP +0.0596 [+0.0437,+0.0769] | dR -0.0044 [-0.0156,+0.0087] | dH +0.0307 [+0.0191,+0.0439]
+B@fixed vs orig@A*
+    all    dP +0.0517 [+0.0447,+0.0589] | dR -0.0048 [-0.0122,+0.0017] | dH +0.0463 [+0.0393,+0.0532]
+    evalpy dP +0.0220 [+0.0058,+0.0373] | dR -0.0090 [-0.0216,+0.0006] | dH +0.0071 [-0.0060,+0.0178]
+B@A* vs orig@A*
+    all    dP +0.4712 [+0.4445,+0.4977] | dR -0.2650 [-0.2958,-0.2351] | dH +0.1751 [+0.1407,+0.2076]
+    evalpy dP +0.1261 [+0.0954,+0.1556] | dR -0.2648 [-0.3002,-0.2307] | dH -0.1063 [-0.1367,-0.0773]
+secondary: B vs orig at 1280-max, box_thresh 0.6
+    all    dP +0.3433 [+0.3215,+0.3654] | dR -0.0993 [-0.1166,-0.0827] | dH +0.2238 [+0.2027,+0.2460]
+    evalpy dP +0.1165 [+0.0940,+0.1397] | dR -0.0949 [-0.1162,-0.0748] | dH +0.0047 [-0.0123,+0.0210]

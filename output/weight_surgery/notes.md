@@ -298,3 +298,25 @@ By the rule of section 10 (BE2 only if BE2 >= B on the holdout at fixed pp; it i
   should be at least as large as on val; the evalpy gain should be similar to val (+0.02).
 - Nothing is changed after the test numbers. E2 and BE2 are not run on test.
 - Holdout evaluations used: 3 / 5.
+
+## 13. FINAL TEST (run once, after the freeze) — `ws/70_test.py`, `logs/test.txt`
+
+2,990 images, 1,837 empty. P / R / H.
+| | all images | evalpy | boxes on empty images |
+|---|---|---|---|
+| original, fixed pp | 0.3168 / 0.8903 / 0.4673 | 0.7751 / 0.8855 / 0.8266 | 2083 |
+| original, A* | 0.3951 / 0.8823 / 0.5458 | 0.8347 / 0.8811 / 0.8573 | 1465 |
+| B, fixed pp | 0.4468 / 0.8775 / 0.5921 | 0.8567 / 0.8721 / 0.8643 | 1175 |
+| B, A* | 0.8663 / 0.6173 / 0.7209 | 0.9607 / 0.6164 / 0.7509 | 93 |
+| secondary 1280-max bt 0.6, original | 0.3732 / 0.8823 / 0.5245 | 0.8186 / 0.8749 / 0.8458 | 1614 |
+| secondary, B | 0.7165 / 0.7830 / 0.7483 | 0.9351 / 0.7800 / 0.8506 | 316 |
+
+Paired dH: B vs original at fixed pp: all +0.1248 [+0.1161, +0.1338], evalpy +0.0377 [+0.0284, +0.0473].
+B at fixed vs original at A*: all +0.0463 [+0.0393, +0.0532], evalpy +0.0071 [-0.0060, +0.0178].
+As expected beforehand: B at A* and at box_thresh 0.6 loses recall (0.62 / 0.78). Those rows score highest on
+the all-images count only because 61% of test is empty. Nothing was changed after these numbers.
+
+Also after the freeze (no selection): full val for all candidates (`logs/val_full.txt`); `tools/eval.py` on
+`best_edited.pth`, full val: P 0.8993 R 0.9323 H 0.9155 (original 0.8499 / 0.9434 / 0.8943).
+Export check not possible here (config lacks `Export`; exporter needs `onnxscript`, not installed).
+Report: `report.md`. Holdout evaluations used: 3 / 5.
