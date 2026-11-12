@@ -257,3 +257,44 @@ the fixed pp; A* = (0.10, 0.65, 1.3); and its own dev-best pp (E2: A*; B: (0.1, 
 No sweep on the holdout. An edit qualifies if its holdout hmean (evalpy, fixed pp) is above the original's.
 Frozen candidate: BE2 if E2 qualifies and BE2 >= B on the holdout at fixed pp; else B if B qualifies;
 else E2 if E2 qualifies; else none.
+
+## 11. Holdout evaluations (3 of 5 used) — `ws/60_holdout.py`, `logs/holdout.txt`
+
+val_holdout: 769 images, 99 empty. Settings fixed in advance, no sweep. evalpy P / R / H (all-images H).
+
+| checkpoint | fixed pp | paired dH vs original, fixed pp [95% CI] | at A* | own dev-best pp |
+|---|---|---|---|---|
+| original | 0.8570 / 0.9322 / 0.8930 (0.8416) | | 0.8894 / 0.9184 / 0.9037 (0.8659) | |
+| E2 (holdout eval #1) | 0.8768 / 0.9197 / 0.8977 (0.8560) | +0.0047 [-0.0043, +0.0135]; all +0.0144 [+0.0043, +0.0248] | 0.9022 / 0.9147 / 0.9084 (0.8765) | = A* |
+| B (holdout eval #2) | 0.9084 / 0.9210 / 0.9146 (0.8822) | +0.0216 [+0.0124, +0.0313]; all +0.0406 [+0.0294, +0.0523] | 0.9741 / 0.7077 / 0.8198 | (0.1, 0.5, 1.3): 0.9062 (0.8826) |
+| BE2 (holdout eval #3) | 0.9133 / 0.9122 / 0.9127 (0.8859) | +0.0197 [+0.0084, +0.0313]; all +0.0444 [+0.0306, +0.0587] | 0.9790 / 0.6424 / 0.7758 | (0.1, 0.4, 1.4): 0.9184 (0.8911) |
+
+- Postprocess alone (A*) on the holdout: +0.0107 hmean (0.8930 -> 0.9037), down from +0.0160 on dev.
+- E2 at A* vs original at A*: +0.0047 [-0.0027, +0.0120] evalpy, +0.0106 [+0.0019, +0.0195] all.
+  E2 has the right sign everywhere but the fixed-measurement gain is inside the noise on held-out data.
+- BE2 vs B at fixed pp: -0.0019 [-0.0096, +0.0054] evalpy, +0.0038 [-0.0053, +0.0126] all. No added value.
+- B's dev-tuned postprocess did not transfer (0.9062 < 0.9146 at fixed pp): for B the fixed pp is its setting.
+
+All three improve holdout hmean at the fixed postprocess, so all three "qualify" by the letter of the rule;
+only B (and BE2, through B) is clear of the noise.
+
+## 12. FROZEN CHOICE (written before any contact with the test set)
+
+By the rule of section 10 (BE2 only if BE2 >= B on the holdout at fixed pp; it is not: 0.9127 < 0.9146):
+
+- **Frozen checkpoint: B** = `output/weight_surgery/cand_B_s0.25.pth`, copied to `best_edited.pth`.
+  Edit: `head.binarize.conv3.weight *= 0.25`, `head.binarize.conv3.bias = 0.25*(bias - L0) + L0`,
+  L0 = ln(0.2/0.8) = -1.3863. Two tensors, 97 values. This is a global knob (baseline B class), not surgery.
+- **Frozen best postprocess from baseline A: A* = thresh 0.10, box_thresh 0.65, unclip 1.3.**
+- Test plan, each of {original, B} run once per resize protocol:
+  1. default test resize (736-min), scored at the fixed pp and at A*;
+  2. secondary: 1280-max resize, thresh 0.2, box_thresh 0.6, unclip 1.4.
+  Both aggregations (evalpy = what tools/eval.py computes, which skips the empty test images; all = every
+  image, the count that matches earlier test evaluations and the "empty images cost precision" concern).
+- Expectations stated in advance: B rescales the score axis and is matched to box_thresh 0.45, so B at A*
+  (box_thresh 0.65) and B at the secondary setting (box_thresh 0.6) should lose a lot of recall; the
+  meaningful comparisons are B at fixed pp vs original at fixed pp, and B at fixed pp vs original at A*.
+  Because 61% of test images are empty and B removes mostly non-text boxes, the all-images gain on test
+  should be at least as large as on val; the evalpy gain should be similar to val (+0.02).
+- Nothing is changed after the test numbers. E2 and BE2 are not run on test.
+- Holdout evaluations used: 3 / 5.
