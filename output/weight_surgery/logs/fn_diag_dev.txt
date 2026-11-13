@@ -1,0 +1,17 @@
+dev: care GT 731, unmatched 42
+  no_contour                     13 | median short side(model px)  38.1 | median pmax 0.000 | median frac>0.2 0.00 | median lmean -17.32
+  kept_tight                     11 | median short side(model px)  64.8 | median pmax 1.000 | median frac>0.2 0.11 | median lmean -28.15
+  kept_loose_or_merged            6 | median short side(model px)  41.4 | median pmax 1.000 | median frac>0.2 0.43 | median lmean -19.81
+  kept_split                      5 | median short side(model px)  93.3 | median pmax 1.000 | median frac>0.2 0.22 | median lmean -25.56
+  dropped_by_box_thresh           2 | median short side(model px)  34.3 | median pmax 0.798 | median frac>0.2 0.10 | median lmean -18.00
+  kept_shifted                    2 | median short side(model px) 176.3 | median pmax 0.998 | median frac>0.2 0.30 | median lmean -14.72
+  contour_tiny_or_elsewhere       2 | median short side(model px)  76.2 | median pmax 0.418 | median frac>0.2 0.00 | median lmean -22.04
+  dropped_by_min_size             1 | median short side(model px)  30.8 | median pmax 0.892 | median frac>0.2 0.01 | median lmean -25.97
+  cross-tab why x taxonomy cat: {('kept_loose_or_merged', 'fn_geometry_0.3-0.5'): 3, ('no_contour', 'fn_missed'): 13, ('kept_split', 'fn_split'): 5, ('kept_tight', 'fn_partial_<0.3'): 4, ('dropped_by_box_thresh', 'fn_missed'): 2, ('kept_loose_or_merged', 'fn_partial_<0.3'): 3, ('kept_shifted', 'fn_partial_<0.3'): 2, ('kept_tight', 'fn_geometry_0.3-0.5'): 7, ('contour_tiny_or_elsewhere', 'fn_missed'): 2, ('dropped_by_min_size', 'fn_missed'): 1}
+  matched GT: median short 51.2, median lmean -32.98, median frac 0.33
+  recall by short side (model px): bin | n | recall
+    [16,24) n     7 recall 0.857
+    [24,40) n   183 recall 0.929
+    [40,80) n   417 recall 0.957
+    [80,1000000000.0) n   124 recall 0.919
+  scores of box_thresh-dropped contours on unmatched GT: [0.29, 0.43]

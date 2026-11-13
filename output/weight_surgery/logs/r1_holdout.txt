@@ -1,0 +1,5 @@
+=== val_holdout: 769 images, 99 empty
+orig  all P 0.7660 R 0.9337 H 0.8416 (gt 694 det 846 tp 648) | evalpy P 0.8570 R 0.9322 H 0.8930 (gt 797 det 867 tp 743) | boxes on empty 87 | gained/lost +0 / 0
+R1    all P 0.7924 R 0.9352 H 0.8579 (gt 694 det 819 tp 649) | evalpy P 0.8753 R 0.9335 H 0.9035 (gt 797 det 850 tp 744) | boxes on empty 77 | gained/lost +4 / -3
+R1 vs orig: all    dP +0.0265 [+0.0151,+0.0387] | dR +0.0014 [-0.0058,+0.0088] | dH +0.0163 [+0.0079,+0.0256]
+R1 vs orig: evalpy dP +0.0183 [+0.0070,+0.0304] | dR +0.0013 [-0.0051,+0.0077] | dH +0.0104 [+0.0026,+0.0188]

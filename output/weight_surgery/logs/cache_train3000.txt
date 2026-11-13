@@ -1,0 +1,1 @@
+train_feat3000.txt evalpy: P 0.9216 R 0.9694 H 0.9449 (gt 3165 det 3329 tp 3068) | all: P 0.7392 R 0.9602 H 0.8353 (gt 2438 det 3167 tp 2341)

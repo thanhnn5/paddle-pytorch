@@ -1,0 +1,11 @@
+regions: background 3285 matched GT 604 missed GT 283
+depth (channels) | AUC missed-vs-bg (CV) | AUC matched-vs-bg (CV) | missed scored by the matched-vs-bg direction: AUC vs bg, share above the bg 99th pct | AUC missed-vs-matched (CV)
+bb0   (48) | 0.945 | 0.989 | 0.934, 0.61 (matched: 0.82) | 0.701
+bb1   (96) | 0.976 | 0.998 | 0.963, 0.70 (matched: 0.96) | 0.853
+bb2   (192) | 0.978 | 1.000 | 0.943, 0.70 (matched: 1.00) | 0.959
+bb3   (384) | 0.963 | 1.000 | 0.842, 0.50 (matched: 1.00) | 0.996
+neck  (96) | 0.977 | 1.000 | 0.916, 0.65 (matched: 1.00) | 0.999
+h1    (24) | 0.970 | 0.999 | 0.916, 0.61 (matched: 1.00) | 1.000
+h2    (24) | 0.969 | 1.000 | 0.943, 0.59 (matched: 1.00) | 1.000
+logit (1) | 0.563 | 0.138 | - | 0.160
+done

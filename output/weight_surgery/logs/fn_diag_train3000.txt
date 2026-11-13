@@ -1,0 +1,18 @@
+train3000: care GT 2438, unmatched 97
+  no_contour                     52 | median short side(model px)  24.2 | median pmax 0.000 | median frac>0.2 0.00 | median lmean -17.34
+  kept_tight                     23 | median short side(model px)  48.2 | median pmax 1.000 | median frac>0.2 0.12 | median lmean -22.33
+  kept_loose_or_merged           12 | median short side(model px)  29.7 | median pmax 1.000 | median frac>0.2 0.61 | median lmean -3.72
+  kept_split                      5 | median short side(model px)  28.6 | median pmax 1.000 | median frac>0.2 0.19 | median lmean -27.06
+  dropped_by_box_thresh           3 | median short side(model px)  27.5 | median pmax 0.922 | median frac>0.2 0.07 | median lmean -15.71
+  kept_shifted                    1 | median short side(model px)  28.6 | median pmax 1.000 | median frac>0.2 0.31 | median lmean -23.64
+  contour_tiny_or_elsewhere       1 | median short side(model px)  26.6 | median pmax 0.202 | median frac>0.2 0.00 | median lmean -22.92
+  cross-tab why x taxonomy cat: {('no_contour', 'fn_missed'): 52, ('kept_loose_or_merged', 'fn_geometry_0.3-0.5'): 7, ('kept_tight', 'fn_geometry_0.3-0.5'): 17, ('kept_tight', 'fn_partial_<0.3'): 6, ('kept_shifted', 'fn_geometry_0.3-0.5'): 1, ('kept_split', 'fn_split'): 5, ('kept_loose_or_merged', 'fn_merged'): 4, ('dropped_by_box_thresh', 'fn_missed'): 3, ('contour_tiny_or_elsewhere', 'fn_missed'): 1, ('kept_loose_or_merged', 'fn_partial_<0.3'): 1}
+  matched GT: median short 45.7, median lmean -31.96, median frac 0.34
+  recall by short side (model px): bin | n | recall
+    [8,12) n     2 recall 0.500
+    [12,16) n    12 recall 0.833
+    [16,24) n   210 recall 0.862
+    [24,40) n   766 recall 0.956
+    [40,80) n  1128 recall 0.979
+    [80,1000000000.0) n   320 recall 0.978
+  scores of box_thresh-dropped contours on unmatched GT: [0.39, 0.4, 0.41]

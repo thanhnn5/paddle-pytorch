@@ -1,0 +1,11 @@
+=== val_dev: 784 images, 85 empty
+orig  evalpy P 0.8355 R 0.9484 H 0.8884 (gt 814 det 924 tp 772) | all P 0.7571 R 0.9464 H 0.8413 (gt 728 det 910 tp 689) | boxes on empty 84 | gained/lost +0 / 0
+T     evalpy P 0.8362 R 0.9533 H 0.8909 (gt 814 det 928 tp 776) | all P 0.7588 R 0.9505 H 0.8439 (gt 728 det 912 tp 692) | boxes on empty 82 | gained/lost +3 / 0
+      vs orig: all dP +0.0016 [-0.0052,+0.0089] | dR +0.0041 [+0.0000,+0.0095] | dH +0.0026 [-0.0024,+0.0083]
+               evalpy dP +0.0007 [-0.0056,+0.0078] | dR +0.0049 [+0.0000,+0.0120] | dH +0.0026 [-0.0025,+0.0092]
+K     evalpy P 0.8328 R 0.9545 H 0.8895 (gt 814 det 933 tp 777) | all P 0.7543 R 0.9533 H 0.8422 (gt 728 det 920 tp 694) | boxes on empty 85 | gained/lost +5 / 0
+      vs orig: all dP -0.0028 [-0.0118,+0.0063] | dR +0.0069 [+0.0014,+0.0137] | dH +0.0010 [-0.0059,+0.0083]
+               evalpy dP -0.0027 [-0.0116,+0.0063] | dR +0.0061 [+0.0012,+0.0122] | dH +0.0011 [-0.0050,+0.0079]
+T recovers: [(40, 0, 'kept_loose_or_merged'), (608, 1, 'dropped_by_box_thresh'), (654, 1, 'kept_tight')] | newly unmatched: []
+K recovers: [(608, 1, 'dropped_by_box_thresh'), (654, 1, 'kept_tight'), (666, 0, 'kept_tight'), (695, 0, 'kept_split'), (696, 0, 'kept_tight')] | newly unmatched: []
+done

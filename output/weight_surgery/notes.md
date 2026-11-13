@@ -320,3 +320,263 @@ Also after the freeze (no selection): full val for all candidates (`logs/val_ful
 `best_edited.pth`, full val: P 0.8993 R 0.9323 H 0.9155 (original 0.8499 / 0.9434 / 0.8943).
 Export check not possible here (config lacks `Export`; exporter needs `onnxscript`, not installed).
 Report: `report.md`. Holdout evaluations used: 3 / 5.
+
+---
+
+# PART 2 — recall-oriented surgery (started 2026-11-12, new objective)
+
+New objective from the user: **raise recall with little loss of precision**, so the address unit is more likely to be
+captured; a later recognition + address-matching stage resolves the extra boxes. Same rules as part 1 (no gradients,
+edits chosen on train + val_dev, holdout budget continues: 3 of 5 used, test once after a written freeze).
+Scripts continue in `ws/` from number 80.
+
+## 14. Why GT is missed (`ws/80_fn_diag.py`, logs `fn_diag_dev.txt`, `fn_diag_train3000.txt`, sheets `viz/fn_*`)
+
+val_dev, original, fixed pp, all images: 731 care GT, 42 unmatched.
+| why | n | reading (from the crops) |
+|---|---|---|
+| no contour at all (pmax ~0.00 inside the GT) | 13 | vertical / rotated numbers (386, 476, 651, 705), dark or low contrast, blur |
+| box kept, tight: lies inside the GT, IoU < 0.5 | 11 | ~8 are the number correctly boxed inside a loosely drawn GT (plaque); 3 are vertical stacks with one digit found |
+| box kept, looser than GT / merged | 6 | number is inside the box; annotation is tighter or box runs on |
+| box kept, split | 5 | vertical stacks boxed digit by digit (62, 541), wide letter spacing (695, 736), "Twenty Two" |
+| contour exists, dropped by box_thresh | 2 | scores 0.29, 0.43 |
+| contour tiny / elsewhere, min_size | 3 | |
+So about 14 of the 42 "misses" already contain the number (label geometry), about 18 are true blanks and about 8 are
+vertical-stack splits / partials.
+
+train (3,000 images, eval pipeline): 2,438 care GT, 97 unmatched: no contour 52, tight 23, loose/merged 12, split 5,
+box_thresh 3. Recall by short side (model px): [16,24) 0.862, [24,40) 0.956, [40,80) 0.979, 80+ 0.978.
+**Many of the train blanks are clear, legible numbers** (mailbox-cluster units "36", "38", "39", "37"; "4125", "6613",
+"121", "2200", "211", "B", "Suite #2"), not degraded ones: the model answers logit -5 to -11 on text it can evidently
+see elsewhere. Hypothesis H7: these are *suppressed* (the labels mark the address number and leave other numbers out
+in other images), not unseen, so the evidence may survive to the neck.
+
+## 15. Recall baseline A' — postprocess alone cannot buy recall (`ws/81_frontier.py`, `logs/frontier_dev.txt`)
+
+val_dev, 420 settings (thresh 0.01-0.3, box_thresh 0.05-0.6, unclip 1.2-2.0), tools/eval.py count:
+| setting | P | R | det |
+|---|---|---|---|
+| fixed (0.2, 0.45, 1.4) | 0.8355 | 0.9484 | 924 |
+| (0.01, 0.45, 1.4) | 0.8478 | 0.9509 | 913 |
+| (0.01, 0.20, 1.4) | 0.8371 | 0.9533 | 927 |
+| (0.01, 0.05, 1.4) — highest recall on the grid | 0.8170 | 0.9545 | 951 |
+The whole frontier spans 5 extra GT out of 814 (+0.6 point). Unclip does not help (1.5: same; 1.8: -1 point).
+The logits are bimodal (missed GT peak at -5 to -11, kept text at +8), so no threshold and no last-layer knob reaches
+the misses. **Any recall gain has to come from upstream of the last layer.** Bar for an edit: above this frontier.
+
+## 16. H7 at the head: channel scan for recall — NEGATIVE (`ws/fnlab.py`, `ws/82_fn_scan.py`, `logs/fn_scan.txt`)
+
+Lab: all 10,600 train images passed once; kept every image with a fully missed GT (283 missed GT) plus 600 controls
+(823 images, 604 TP boxes, 353 FP boxes). Missed GT sit at logit -10.7 (mean of the top 20% pixels), TP boxes +7.0.
+Gain 0 / 2 / 3 on each of the 96 neck channels read by `head.binarize.conv1`:
+- best suppressor removal: ch 74 (p2) +0.99 on missed GT, but +6,628 far-background pixels above the contour;
+- best amplification: ch 93 (p2) x2 +2.69 (x3 +4.89) with +99k (+534k) background pixels; ch 90 similar.
+- level gains: p2 x1.5 +1.6 on misses with +83k bg px; p3 x0 +1.7 with +27k.
+No channel raises missed text selectively; +9 logits are needed. Rejected.
+
+## 17. Where is missed text lost? (`ws/83_depth_probe.py`, `logs/depth_probe.txt`)
+
+Region-pooled features, train lab: 283 missed GT, 604 matched GT, 3,285 random background windows; Fisher
+discriminant, 5-fold CV grouped by image.
+| depth | AUC missed vs background | AUC matched vs background | AUC missed vs matched |
+|---|---|---|---|
+| backbone stage 1 (48) | 0.945 | 0.989 | 0.701 |
+| stage 2 (96) | 0.976 | 0.998 | 0.853 |
+| stage 3 (192) | 0.978 | 1.000 | 0.959 |
+| stage 4 (384) | 0.963 | 1.000 | 0.996 |
+| neck (96) | 0.977 | 1.000 | 0.999 |
+| head h1 / h2 (24) | 0.970 / 0.969 | 0.999 / 1.000 | 1.000 |
+Missed text stays separable from background (as pooled regions) up to the last hidden layer, and the split between
+"number I report" and "number I do not" is formed in backbone stages 3-4. That is a learned decision, not blindness.
+
+## 18. E3 — closed-form refit of the last layer for missed text: REJECTED (`ws/84_h2_ridge.py`, `logs/e3_ridge.txt`)
+
+Ridge direction on h2 (target 1 on the shrunk core of missed GT, 0 on detected text and far background; three
+weightings). Per unit of strength the background moves +0.23 to +0.50 for +1.0 on missed text (pixel level).
+On the fit images themselves: alpha 6 -> 13 of 306 misses recovered for 59 new boxes; alpha 8 -> 28 for 315. Pooled
+separability does not survive at pixel level in 24 channels. Not evaluated on val.
+
+## 19. E4 — thresholded missed-text detector on the neck: REJECTED (`ws/85_neck_dir.py`, `logs/e4_neck_dir.txt`)
+
+One 3x3 conv1 filter's worth of features (centre + 3x3 mean of the 96 neck channels), Fisher direction, fitted on
+half the lab images and scored on the other half. Best variant, held-out half: at the threshold where 34% of missed
+GT have >=30% of their core above it, there are 50 background blobs per 100 images. Misses occur at about 2.7 per
+100 images, so that is ~1 recovered box per 50 new ones. Base-rate arithmetic for ANY edit: to gain 1 point of
+recall at <1 point of precision it must recover a third of the blanks while adding fewer than ~1.5 boxes per 100 images.
+
+## 20. H8 — lateral gains in the neck (`ws/86_topdown.py`, `87_in5_paths.py`, `88_lateral_dev.py`)
+
+Train lab (miss-enriched, so "recovered" counts are inflated by selection): in5 x0.5 recovered 16, lost 6, and
+removed 32 boxes; in5 x0 recovered 50, lost 34. Split by route: the top-down route (in5 added into out4) carries the
+recovery (x0.5: +19 / -5), the direct p5 branch carries false positives (x0: 24 fewer boxes on empty images).
+val_dev (unselected sample), all-images counts, 728 GT, 910 boxes at baseline:
+| edit | GT gained / lost | boxes | dR [95% CI] | dP [95% CI] |
+|---|---|---|---|---|
+| in5 top-down x0.85 | +1 / 0 | 909 | +0.0014 [0, +0.004] | +0.0019 |
+| in5 top-down x0.75 | +3 / 0 | 912 | +0.0041 [0, +0.0096] | +0.0016 [-0.005, +0.009] |
+| in5 top-down x0.5 | +4 / -4 | 922 | 0.0000 | -0.0099 |
+| in5 top-down x0 | +6 / -21 | 1078 | -0.0206 | -0.1319 |
+| in5 p5 branch x0.5 | +2 / -1 | 906 | +0.0014 | +0.0044 |
+| in4 x1.25 / x1.5 / x2 | +2/0, +4/0, +8/-1 | 932 / 958 / 1002 | +0.003 / +0.005 / +0.010 | -0.016 / -0.034 / -0.063 |
+| in3 x1.5 / x2 | +1/0, +1/-1 | 926 / 943 | +0.001 / 0 | -0.012 / -0.027 |
+| in2 x2 | +1 / 0 | 918 | +0.001 | -0.006 |
+The train-lab effect of in5 mostly does not survive on an unselected sample. Amplifying a lateral buys about one
+GT per 12 extra boxes. Only in5 top-down x0.75 gains recall without losing precision (3 boxes).
+
+## 21. Recall knob on the last layer, and the candidates (`ws/89_knob_recall.py`, `ws/90_recall_cands.py`)
+
+Bias shift at fixed pp, val_dev: +1 -> dR +0.003, +4 -> dR +0.008 / dP -0.017, +8 -> dR +0.011 / dP -0.051.
+s 0.5 with shift +3: dR +0.0069 [+0.0014, +0.0135], dP -0.0028 [-0.012, +0.006] (5 gained, 0 lost, 10 more boxes).
+Exact-weight candidates on val_dev, fixed pp (`logs/recall_cands_dev.txt`):
+| candidate | tools/eval.py count P / R / H | all P / R | gained / lost |
+|---|---|---|---|
+| original | 0.8355 / 0.9484 / 0.8884 | 0.7571 / 0.9464 | |
+| T: in5 top-down x0.75 (5 neck tensors, function-preserving on the p5 branch) | 0.8362 / 0.9533 / 0.8909 | 0.7588 / 0.9505 | +3 / 0 |
+| K: last-layer knob s 0.5, +3 (baseline-B class) | 0.8328 / 0.9545 / 0.8895 | 0.7543 / 0.9533 | +5 / 0 |
+| T + K | 0.8328 / 0.9545 / 0.8895 | 0.7527 / 0.9533 | +5 / 0 |
+T and K do not add: they recover the same boxes. The ceiling of everything tried is about +0.5 to +0.7 point of
+recall at flat precision, the same as the postprocess frontier (section 15).
+
+**Decision rule for the holdout, written before running it.** Two evaluations (the last two of the budget): T and K,
+each at the fixed postprocess, no sweep. A candidate qualifies only if on val_holdout it gains more GT than it loses
+AND its precision change (all images) is above -0.005. If both qualify, T is preferred (targeted, no change to the
+score scale); T+K is not evaluated. If neither qualifies, no recall edit is delivered.
+
+## 22. Recall candidates on val_dev in detail, and the HOLDOUT (`ws/91_recall_holdout.py`, `logs/recall_dev_detail.txt`, `logs/recall_holdout.txt`)
+
+What each candidate recovers on val_dev (by the diagnosis of section 14): T: one box dropped by box_thresh, two
+label-geometry cases. K: the same box_thresh case, one vertical stack completed (666), one letter-spacing split
+merged (695), two label-geometry cases. **None of the 13 true blanks is recovered by anything.**
+
+val_holdout (769 images, 99 empty), fixed pp, run once each after the rule in section 21 was written:
+| | tools/eval.py count P / R / H | all P / R | gained / lost | dR all [95% CI] | dP all [95% CI] |
+|---|---|---|---|---|---|
+| original | 0.8570 / 0.9322 / 0.8930 | 0.7660 / 0.9337 | | | |
+| T | 0.8562 / 0.9335 / 0.8932 | 0.7687 / 0.9337 | +2 / -2 | 0.0000 [-0.0058, +0.0058] | +0.0027 [-0.008, +0.014] |
+| K | 0.8497 / 0.9360 / 0.8907 | 0.7593 / 0.9366 | +5 / -3 | +0.0029 [-0.0044, +0.0114] | -0.0066 [-0.017, +0.004] |
+By the rule: T does not gain more than it loses; K gains more than it loses but precision falls by more than 0.005.
+**Neither qualifies. No recall edit is delivered.** `best_edited.pth` is unchanged (B from part 1).
+Holdout evaluations used: **5 / 5**. The test set was not touched in part 2 (nothing was frozen to test).
+Report: `report_recall.md`.
+
+## 23. Part 2 continued (holdout cap lifted by the user; holdout numbers are still labelled as such)
+
+### 23a. What are the extra boxes of the lateral amplifications? (`ws/92_new_boxes.py`, `viz/new_dev/`)
+New = no baseline box overlaps it and it is unmatched. val_dev: in4 x1.5 46 new boxes (+4 GT), in4 x2 86 (+8/-1),
+in3 x2 28 (+1/-1), last-layer shift +6 40 (+6/0), top-down x0 191 (+6/-21), in2 x2 5 (+1/0).
+By eye, 60 of the 86 for in4 x2: ~9 numbers (4 are single digits inside annotated vertical stacks; one mailbox unit
+"213", "725", "0610"), ~13 other lettering ("hello", "BLDG", "ME", "Drive"), ~38 non-text (shadows, handles,
+ironwork, blank surfaces). So the extra boxes are mostly junk, not withheld unit numbers. Whole-lateral gains rejected
+also under the "unannotated numbers are welcome" reading.
+
+### 23b. H9 input statistics (`ws/94_input_gain.py`, `logs/input_gain_dev.txt`) — REJECTED
+x' = a x + b on the normalised input, val_dev: a 1.25 -> +6 / -38 GT; a 0.8 -> +3 / -2 with 148 more boxes;
+b +0.3 -> +4 / 0 with 129 more boxes; b -0.3 -> +1 / -11. The model is tightly tuned to its input scale.
+
+### 23c. Channel-level scan of the neck laterals (`ws/93_lateral_scan.py`, `logs/lateral_scan.txt`) — NEGATIVE
+Gain 0 and 2 on each of the 4 x 96 lateral channels, neck + head re-run on cached backbone features (449 train lab
+images, 283 missed GT). Largest effects on missed text: in5 ch 53 ablated +0.92 logit (with +34k background pixels),
+in5 ch 11 doubled +0.97 (+1.2k). Channels that are selective (background not raised, TP kept) move misses by +0.2.
+Needed: about +9. The withholding is distributed; there is no single channel or small set to cut.
+
+### 23d. Last-layer family, scale x contour (`ws/95_menu.py`, `ws/96_knob_grid.py`, `logs/menu.txt`, `logs/knob_grid_dev.txt`)
+logit' = s (logit - L0 + c): s < 1 un-saturates the box score (edit B of part 1 is s 0.25, c 0); c > 0 moves the
+contour from logit > L0 to logit > L0 - c, i.e. larger regions that merge split digits and pick up sub-threshold text.
+val_dev, fixed pp, all images (baseline P 0.757 R 0.9464): recall steps to 0.9533 (+5 GT, 0 lost) for c >= 4 at
+s 0.3-0.7, and precision rises as s falls: (s 0.5, c 4) 0.761, (0.4, 5) 0.764, (0.3, 5) 0.774, (0.3, 6) 0.773,
+(0.25, 6) 0.776. Below s 0.25 true positives start to fall under box_thresh (s 0.2: 4 lost).
+**Chosen on val_dev: R1 = (s 0.3, c 5)**, middle of the plateau s 0.3-0.4 x c 4-6. This is a global knob on two
+tensors (baseline-B class), not surgery. Rule before the holdout: R1 qualifies if it gains more GT than it loses and
+precision does not fall. If it qualifies it is frozen and run once on test against the original at the fixed pp.
+(The first menu, `logs/menu.txt`, already showed (s 0.5, shift +2) on the holdout; R1 itself was not seen there.)
+
+### 23e. R1 on the holdout (`ws/97_r1.py`, `logs/r1_holdout.txt`) and FREEZE
+val_holdout, fixed pp: original all P 0.7660 R 0.9337 | R1 all P 0.7924 R 0.9352 (4 gained, 3 lost; boxes 846 -> 819).
+Paired: dP +0.0265 [+0.0151, +0.0387], dR +0.0014 [-0.0058, +0.0088], dH +0.0163 [+0.0079, +0.0256].
+Qualifies by the rule, but the recall gain seen on dev (+0.7) is not confirmed (+0.1, inside the noise): what holds
+is "recall not lost, precision gained", i.e. the precision of edit B at about half strength without B's recall cost.
+**Frozen for the test: `cand_R1_s0.3_c5.pth`** (conv3.weight x0.3; conv3.bias = 0.3 (bias - L0 + 5) + L0), fixed pp,
+original vs R1, one run. Expectation written beforehand: on test recall within +-0.5 point of the original (B: -1.3),
+precision clearly up with every image counted, by less than B's. Nothing is changed after the test numbers.
+
+### 23f. R1 on TEST (run once after the freeze; `logs/r1_test.txt`) — FAILED, not delivered
+(A first invocation pointed at the wrong image folder and crashed before reading any image.)
+2,990 images, 1,837 empty, fixed pp:
+| | all images P / R / H | tools/eval.py count P / R / H | boxes on empty images | GT gained / lost |
+|---|---|---|---|---|
+| original | 0.3168 / 0.8903 / 0.4673 | 0.7751 / 0.8855 / 0.8266 | 2083 | |
+| R1 | 0.3361 / 0.8735 / 0.4854 | 0.7793 / 0.8637 / 0.8194 | 1858 | +3 / -24 |
+| B (part 1, for reference) | 0.4468 / 0.8775 / 0.5921 | 0.8567 / 0.8721 / 0.8643 | 1175 | |
+Paired R1 vs original, all images: dR -0.0168 [-0.0256, -0.0089], dP +0.0193 [+0.0145, +0.0243].
+My expectation (recall within +-0.5 point) was wrong: on test R1 loses 1.7 points of recall, and it is dominated by B
+(lower recall and far lower precision). Lowering the contour, which merged splits on val, costs matches on test.
+I did not look at the test images to find out why (larger merged regions failing IoU 0.5 is the likely cause, unverified).
+**R1 is not delivered. `best_edited.pth` is unchanged.** The val -> test gap also means that the +0.4 to +0.7 point
+recall effects seen on val for T, K and the postprocess settings should not be expected to carry to test.
+Test-set runs in total: part 1 (original, B), part 2 (original, R1).
+
+## 24. Inference-side question from the user: overlapping-crop (tiled) inference and multi-scale fusion (2026-11-13)
+Not a weight edit: original weights, forward only, fixed pp. Val only; **the test set was not run**.
+Scripts `ws/98_tiles.py`, `ws/99_downscale.py`; logs `logs/tiles_{dev,holdout}.txt`, `logs/downscale_{dev,holdout}.txt`.
+Val images are 720 x 1280 and the default resize (short side to 736) is already ~1.02x native; missed GT is not small
+text (median short side of matched GT 51 model px, section 14). So tiling can only add resolution by upscaling.
+
+Notation: F{z} = whole frame, short side 736*z. T{z}/{t} = frame at zoom z cut into t x t tiles with 25% overlap,
+centre-weighted blend in the overlaps ("m" = max in overlaps). Fusion = pixelwise max or mean of probability maps.
+All numbers: every image counted, paired vs F1.0. "+a/-b" = GT gained / lost.
+
+### 24a. Tiled inference: NEGATIVE on both splits
+| variant | dev P / R | dev +/- | holdout P / R | holdout +/- |
+|---|---|---|---|---|
+| F1.0 (baseline) | 0.7571 / 0.9464 | | 0.7660 / 0.9337 | |
+| T1.0/480 blend (same scale, tiles only) | 0.7068 / 0.9203 | +7/-26 | | |
+| T1.5/736 blend | 0.5093 / 0.9423 | +11/-14 | 0.5172 / 0.9308 | +6/-8 |
+| T2.0/960 blend | 0.3363 / 0.9368 | +15/-22 | 0.3388 / 0.9179 | +8/-19 |
+| max(F1.0, T1.5/736) | 0.4954 / 0.9519 | +10/-6 | 0.5004 / 0.9352 | +8/-7 |
+| max(F1.0, T2.0/960) | 0.3364 / 0.9478 | +14/-13 | 0.3372 / 0.9294 | +11/-14 |
+| mean(F1.0, T1.5/736) | 0.7874 / 0.9409 | +5/-9 | 0.8185 / 0.9294 | +4/-7 |
+- Tiles at the same scale lose recall (-2.6 pt [-4.3,-1.0]): cutting context hurts by itself (text cut at tile edges,
+  less surrounding scene).
+- Upscaling is what costs precision, tiles or not: whole frame F1.5 P 0.558, F2.0 P 0.355 (boxes 910 -> 1234 -> 1924).
+  The model fires on fine texture when zoomed in; F2.0 also loses recall on the holdout (-3.5 pt).
+- "max" stitching in the overlaps is worse than blending everywhere (T1.5/736m P 0.32).
+- No tiled variant gains recall on the holdout; the best dev one (max with T1.5: +0.55 pt, n.s.) costs 26 pt precision.
+
+### 24b. Scale matters in the other direction: a SMALLER test resize gains precision at no recall cost
+Bug note: in `98_tiles.py` the row labelled "F0.75" is not a 0.75 frame. DetResizeForTest with limit_type 'min'
+never downsizes, so that row is the native frame rounded to 32 (704 x 1280, ~0.96x). `99_downscale.py` resizes itself.
+| whole frame | dev P / R | dev +/- | holdout P / R | holdout +/- |
+|---|---|---|---|---|
+| F0.5 | 0.8700 / 0.8915 | +8/-48 | 0.8853 / 0.8674 | +9/-55 |
+| F0.625 | 0.8557 / 0.9121 | +10/-35 | 0.8676 / 0.9063 | +9/-28 |
+| F0.75 | 0.8389 / 0.9368 | +12/-19 | 0.8351 / 0.9265 | +6/-11 |
+| **F0.875** (short side 640) | 0.8143 / 0.9519 | +11/-7 | 0.8204 / 0.9409 | +7/-2 |
+| F0.9375 | 0.7795 / 0.9519 | +8/-4 | 0.7907 / 0.9308 | +3/-5 |
+| F1.0 | 0.7571 / 0.9464 | | 0.7660 / 0.9337 | |
+| F1.125 | 0.7160 / 0.9560 | +9/-2 | 0.7151 / 0.9294 | +3/-6 |
+F0.875 vs F1.0: dev dP +0.057 [+0.039,+0.076], dR +0.0055 [-0.006,+0.017]; holdout dP +0.054 [+0.036,+0.073],
+dR +0.0072 [-0.001,+0.017]. Precision falls monotonically with scale on both splits; recall is flat from 0.875 to 1.125
+and drops below 0.75. This replicates on the holdout, and it is cheaper (0.77x the pixels), not dearer.
+A scale change of 4-6% already flips 8-12 GT each way on a split: the borderline GTs are scale-jittery, which is why
+single-split recall deltas of +-0.7 pt are noise.
+
+### 24c. Multi-scale fusion (what is usually meant by TTA)
+| fusion | dev P / R | dev +/- | holdout P / R | holdout +/- |
+|---|---|---|---|---|
+| max(F1.0, F0.75) | 0.7557 / 0.9602 | +11/-1 | 0.7463 / 0.9366 | +4/-2 |
+| max(F1.0, F0.875) | 0.7530 / 0.9588 | +9/0 | 0.7561 / 0.9380 | +4/-1 |
+| max(F0.875, F1.0, F1.125) | 0.6951 / 0.9615 | +12/-1 | 0.6897 / 0.9352 | +4/-3 |
+| mean(F1.0, F0.875) | 0.8212 / 0.9464 | +4/-4 | 0.8333 / 0.9366 | +4/-2 |
+| mean(F0.75, F0.875, F1.0) | 0.8460 / 0.9505 | +8/-5 | 0.8500 / 0.9308 | +4/-6 |
+- max-fusion: recall +1.2 to +1.4 pt on dev ([+0.5,+2.4], the largest recall gain of the whole study) but only +0.3 to
+  +0.4 pt on the holdout ([-0.2,+1.1], n.s.), at -1 to -2 pt precision. Pooled about +0.8 pt. Direction is consistent
+  (gains > losses on both splits), size is not established. Costs two forward passes.
+- mean-fusion: behaves like the smaller scale: precision +6 to +9 pt, recall flat. No better than F0.875 alone for recall.
+- Nothing here recovers the true blanks; the GT that flips is the borderline geometry / split group.
+
+### 24d. Standing
+- Tiled inference: does not work for this model and data. Do not use.
+- Smaller test resize (short side ~640): replicated precision gain (+5.5 pt) with recall not lost. Candidate default.
+- max(F1.0, F0.875 or F0.75): the only recall-positive inference setting; small and unconfirmed in size.
+- None of this has been run on test. Given section 23f (val recall gains did not carry to test, and the test images
+  may have other sizes than 720 x 1280), these need one frozen test run before being relied on.

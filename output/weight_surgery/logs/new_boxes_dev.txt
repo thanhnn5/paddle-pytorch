@@ -1,0 +1,8 @@
+in4x1.5        all P 0.7234 R 0.9519 det 958 (base 910) | GT gained/lost +4/-0 | new unmatched boxes 46
+in4x2          all P 0.6946 R 0.9560 det 1002 (base 910) | GT gained/lost +8/-1 | new unmatched boxes 86
+td0            all P 0.6252 R 0.9258 det 1078 (base 910) | GT gained/lost +6/-21 | new unmatched boxes 191
+td0.5_in4x1.5  all P 0.6896 R 0.9492 det 1002 (base 910) | GT gained/lost +7/-5 | new unmatched boxes 86
+in3x2          all P 0.7306 R 0.9464 det 943 (base 910) | GT gained/lost +1/-1 | new unmatched boxes 28
+shift6         all P 0.7270 R 0.9547 det 956 (base 910) | GT gained/lost +6/-0 | new unmatched boxes 40
+in2x2          all P 0.7516 R 0.9478 det 918 (base 910) | GT gained/lost +1/-0 | new unmatched boxes 5
+done
